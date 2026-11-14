@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="75%"><stop offset="0" stop-color="#1b7a5a"/><stop offset=".55" stop-color="#0b3a2c"/><stop offset="1" stop-color="#05070d"/></radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff1c1"/><stop offset=".5" stop-color="#f2c55c"/><stop offset="1" stop-color="#b9842a"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g transform="translate(256 262) rotate(-12)">
+    <rect x="-118" y="-160" width="200" height="280" rx="26" fill="#f7f4ec" opacity=".9" transform="rotate(-8)"/>
+    <rect x="-82" y="-150" width="200" height="280" rx="26" fill="#ffffff"/>
+    <text x="-60" y="-88" font-family="Arial Black,Arial" font-weight="900" font-size="74" fill="#d23c2c">A</text>
+    <path d="M18 -10 C 18 -60, 98 -60, 98 -10 C 98 30, 58 50, 58 80 C 58 50, 18 30, 18 -10 Z" fill="#d23c2c" transform="translate(-40 10) scale(1.1)"/>
+  </g>
+  <text x="256" y="470" text-anchor="middle" font-family="Arial Black,Arial" font-weight="900" font-size="64" fill="url(#gold)">IQ</text>
+</svg>
