@@ -215,6 +215,15 @@ export function madeHand(hero: number[], board: number[]): Made {
   }
   if (cat === 2) {
     if (boardCat === 2) return { cat, name: 'שני הזוגות על השולחן', strength: 1 };
+    if (boardCat === 1) {
+      // one pair is on the board for everyone: what really counts is the pair the hero made
+      const boardPair = bRanks.find((r, i) => bRanks.indexOf(r) !== i)!;
+      const mine = a === b ? a : bRanks.includes(a) && a !== boardPair ? a : bRanks.includes(b) && b !== boardPair ? b : -1;
+      if (mine >= 0) {
+        const top = a === b ? a > topB : mine === topB;
+        return { cat, name: `זוג ${RN[mine]} (ועוד זוג על השולחן)`, strength: top ? 2 : 1, term: top ? 'toppair' : undefined };
+      }
+    }
     return { cat, name: 'שני זוגות', strength: 3 };
   }
   if (cat === 1) {

@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { hashStr, mulberry32 } from '../engine/cards';
 import { grade, makeScenario, type Action, type GenCfg, type Scenario } from '../engine/scenarios';
-import { nodeId, today, unlocked, yesterday } from '../game/progress';
+import { forgetMistake, nodeId, rememberMistake, today, unlocked, yesterday } from '../game/progress';
 import { sfx } from '../game/sound';
 import { DAILY_CFG, HANDS_PER_ROUND, LEVEL_NAMES, levelOf, stageCfg, WORLDS } from '../game/worlds';
 import { Burst } from '../ui/Burst';
@@ -21,6 +21,7 @@ export function Play({ args }: { args: PlayArgs }) {
       const W = WORLDS[args.w!];
       return { cfg: stageCfg(args.w!, args.l!), title: W.name, sub: `שלב ${args.l! + 1} מתוך 3`, timer: W.timer ? W.timer[args.l!] : 0, seed: (Math.random() * 2 ** 32) >>> 0 };
     }
+    if (args.mode === 'review') return { cfg: DAILY_CFG, title: 'תיקון טעויות', sub: 'הידיים שטעית בהן', timer: 0, seed: 1 };
     if (args.mode === 'daily') return { cfg: DAILY_CFG, title: 'אתגר יומי', sub: 'אותן ידיים לכולם', timer: 0, seed: hashStr('pokeriq-daily-' + today()) };
     const open = WORLDS.filter((_, w) => unlocked(P, w, 0));
     const c: GenCfg = { kinds: [...new Set(open.flatMap(W => W.kinds))], opp: [1, Math.max(...open.map(W => W.opp?.[1] ?? 1))], cands: 3 };
@@ -38,12 +39,16 @@ export function Play({ args }: { args: PlayArgs }) {
   const [result, setResult] = useState<{ stars: number; xp: number; lvUp: number | null } | null>(null);
   const t0 = useRef(0);
   const endless = args.mode === 'free';
+  const queue = useRef<Scenario[]>(args.mode === 'review' ? [...P.mistakes].sort(() => Math.random() - 0.5).slice(0, HANDS_PER_ROUND) : []);
+  const total = args.mode === 'review' ? queue.current.length : HANDS_PER_ROUND;
+  const [streak, setStreak] = useState(0);
 
   const deal = useCallback(() => {
-    const sc = makeScenario(cfg, rng.current);
+    const sc = args.mode === 'review' ? queue.current[i] : makeScenario(cfg, rng.current);
+    if (!sc) return;
     setS(sc); setLast(null); t0.current = performance.now();
     sc.board.forEach((_, k) => sfx.deal(k));
-  }, [cfg]);
+  }, [cfg, i, args.mode]);
 
   useEffect(() => { if (phase === 'decide' && !s) deal(); }, [phase, s, deal]);
 
@@ -56,7 +61,12 @@ export function Play({ args }: { args: PlayArgs }) {
     setLast({ a, g, pts });
     setRes(r => { const n = [...r]; n[i] = g; return n; });
     setPoints(p => p + pts);
-    update(p => { p.hands++; if (g !== 'b') p.correct++; });
+    update(p => {
+      p.hands++; if (g !== 'b') p.correct++;
+      if (g === 'b' && args.mode !== 'review') rememberMistake(p, s);
+      if (g !== 'b' && args.mode === 'review') forgetMistake(p, s);
+    });
+    setStreak(x => (g === 'g' ? x + 1 : 0));
     if (g === 'g') { sfx.good(); setBurst(b => b + 1); } else if (g === 'c') sfx.close(); else sfx.bad();
     setPhase('feedback');
   }, [s, last, i, args.mode, update]);
@@ -69,20 +79,25 @@ export function Play({ args }: { args: PlayArgs }) {
   }, [phase, timer, s, answer]);
 
   const finish = () => {
-    const total = points;
+    const sum = points;
     if (args.mode === 'daily') {
       const squares = res.map(x => (x === 'g' ? '🟩' : x === 'c' ? '🟨' : '🟥')).join('');
       update(p => {
-        p.daily = { date: today(), score: total, squares };
+        p.daily = { date: today(), score: sum, squares };
         p.dailyStreak = p.lastDaily === yesterday() ? p.dailyStreak + 1 : 1;
         p.lastDaily = today();
-        p.xp += Math.round(total * 0.5);
+        p.xp += Math.round(sum * 0.5);
       });
-      sync(); toast(`+${Math.round(total * 0.5)} XP`); go('daily'); return;
+      sync(); toast(`+${Math.round(sum * 0.5)} XP`); go('daily'); return;
     }
-    const frac = total / (HANDS_PER_ROUND * 100);
+    if (args.mode === 'review') {
+      const fixed = res.filter(x => x !== 'b').length;
+      update(p => { p.xp += fixed * 20; }); sync();
+      toast(fixed ? `תיקנת ${fixed} טעויות · +${fixed * 20} XP` : 'נסה שוב, ההסבר יעזור'); go('home'); return;
+    }
+    const frac = sum / (HANDS_PER_ROUND * 100);
     const stars = frac >= 0.9 ? 3 : frac >= 0.75 ? 2 : frac >= 0.6 ? 1 : 0;
-    const xp = Math.round(total * (1 + 0.25 * args.w!) * 0.6);
+    const xp = Math.round(sum * (1 + 0.25 * args.w!) * 0.6);
     const before = levelOf(P.xp), after = levelOf(P.xp + xp);
     update(p => { p.xp += xp; const id = nodeId(args.w!, args.l!); if (stars > (p.stars[id] || 0)) p.stars[id] = stars; });
     sync();
@@ -93,7 +108,7 @@ export function Play({ args }: { args: PlayArgs }) {
   };
 
   const next = () => {
-    if (!endless && i >= HANDS_PER_ROUND - 1) { finish(); return; }
+    if (!endless && i >= total - 1) { finish(); return; }
     setI(x => x + 1); setS(null); setPhase('decide');
   };
 
@@ -112,7 +127,7 @@ export function Play({ args }: { args: PlayArgs }) {
         <div className="play-title"><b>{title}</b><span>{endless ? `יד ${i + 1} · ${res.filter(x => x !== 'b').length} נכונות` : sub}</span></div>
         <motion.div key={points} className="glass score-pill num gold-text" initial={{ scale: 1.3 }} animate={{ scale: 1 }}>{points}</motion.div>
       </div>
-      {!endless && <div className="segs">{Array.from({ length: HANDS_PER_ROUND }, (_, k) => <i key={k} className={res[k] || (k === i ? 'now' : '')} />)}</div>}
+      {!endless && <div className="segs">{Array.from({ length: total }, (_, k) => <i key={k} className={res[k] || (k === i ? 'now' : '')} />)}</div>}
       {timer > 0 && phase === 'decide' && s && (
         <div className="timer"><motion.i key={i} initial={{ scaleX: 1 }} animate={{ scaleX: 0 }} transition={{ duration: timer, ease: 'linear' }} /></div>
       )}
@@ -124,7 +139,7 @@ export function Play({ args }: { args: PlayArgs }) {
       <AnimatePresence>
         {phase === 'feedback' && s && last && (
           <Feedback key={'fb' + i} s={s} chosen={last.a} g={last.g} pts={last.pts} onNext={next}
-            nextLabel={!endless && i >= HANDS_PER_ROUND - 1 ? 'לתוצאות' : 'יד הבאה'} />
+            nextLabel={!endless && i >= total - 1 ? (args.mode === 'review' ? 'סיום' : 'לתוצאות') : 'יד הבאה'} />
         )}
       </AnimatePresence>
 
@@ -169,6 +184,11 @@ export function Play({ args }: { args: PlayArgs }) {
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {streak >= 3 && phase === 'feedback' && (
+          <motion.div key={streak} className="streak-chip" style={{ x: '-50%' }} initial={{ scale: 0, y: -10 }} animate={{ scale: [0, 1.25, 1], y: 0 }} exit={{ opacity: 0 }}>🔥 {streak} ברצף!</motion.div>
         )}
       </AnimatePresence>
       <Burst fire={burst} />

@@ -35,6 +35,7 @@ export function Feedback({ s, chosen, g, pts, onNext, nextLabel, extra, nextDisa
           <div className="box-t">למה {ACT_NAME[s.correct]}?</div>
           <ul className="why">{ex.why.map((w, i) => <motion.li key={i} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 + i * 0.07 }}><Rich text={w} /></motion.li>)}</ul>
         </div>
+        <div className="box rule"><div className="box-t">💡 כלל אצבע לזכור</div><Rich text={ex.rule} /></div>
         {ex.mistake && <div className={`box ${g === 'b' ? 'warn' : ''}`}><div className="box-t">{g === 'b' ? 'איפה הטעות' : 'הערה'}</div><Rich text={ex.mistake} /></div>}
         <button className="adv-toggle" onClick={() => setAdv(a => !a)} aria-expanded={adv}>
           <span>למתקדמים: המספרים</span>

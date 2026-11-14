@@ -1,4 +1,4 @@
-import { chenOf, deal, draws, equity, madeHand, pick, randInt, type Draw, type Made, type Rng } from './cards';
+import { CHEN, chenOf, deal, draws, equity, madeHand, pick, randInt, type Draw, type Made, type Rng } from './cards';
 
 export type Action = 'fold' | 'check' | 'call' | 'raise';
 export type Pos = 'UTG' | 'HJ' | 'CO' | 'BTN' | 'SB' | 'BB';
@@ -104,7 +104,7 @@ function genOpen(rng: Rng): Scenario {
   };
   s.correct = c >= thr ? 'raise' : 'fold';
   const ok = new Set<Action>([s.correct]);
-  if (c === thr || c === thr - 1) { ok.add('raise'); ok.add('fold'); }
+  if (c === thr) ok.add('fold');
   s.ok = [...ok];
   s.dist = Math.abs(c - thr + 0.5) / 12;
   s.meta = { chen: c, openThr: thr, behind: 5 - hi };
@@ -292,7 +292,7 @@ function genFacingBet(rng: Rng, cfg: GenCfg, iters: number): Scenario {
   const nOpp = randInt(rng, cfg.opp?.[0] ?? 1, cfg.opp?.[1] ?? 2);
   const b = postBase(rng, cfg, null, nOpp);
   const bettor = b.ip ? b.vill[0] : b.vill.find(v => POST_ORDER.indexOf(v) > POST_ORDER.indexOf(b.heroPos)) || b.vill[0];
-  const frac = pick(rng, [0.33, 0.5, 0.75, 1, 1.5]);
+  const frac = cfg.draw ? pick(rng, [0.33, 0.33, 0.5, 0.5, 0.75, 1]) : pick(rng, [0.33, 0.5, 0.75, 1, 1.5]);
   const bet = even(b.P * frac);
   const m: Partial<Record<Pos, Partial<Seat>>> = {};
   b.vill.forEach(v => (m[v] = v === bettor ? { state: 'in', chips: bet, tag: `הימור ${bet}`, aggressor: true } : { state: 'in', tag: 'בקופה' }));
@@ -395,7 +395,37 @@ export function inWords(p: number) {
 }
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-export interface Explanation { summary: string; why: string[]; mistake?: string; numbers: { label: string; value: string }[] }
+export interface Explanation { summary: string; why: string[]; rule: string; mistake?: string; numbers: { label: string; value: string }[] }
+
+/** Share of all 1326 starting hands that each position opens with (from the Chen thresholds). */
+export const OPEN_PCT: Record<Pos, number> = (() => {
+  const out = {} as Record<Pos, number>;
+  for (const p of PRE_ORDER) {
+    let k = 0, n = 0;
+    for (let a = 0; a < 52; a++) for (let b = a + 1; b < 52; b++) { n++; if (CHEN[a * 52 + b] >= OPEN_THR[p]) k++; }
+    out[p] = Math.round((k / n) * 100);
+  }
+  return out;
+})();
+
+function ruleOf(s: Scenario): string {
+  switch (s.kind) {
+    case 'open':
+      return `מ${posTok(s.heroPos)} פותחים רק בערך ${OPEN_PCT[s.heroPos]}% מהידיים. ככל שאתה קרוב יותר ל{{BTN|כפתור}}, אפשר לפתוח יותר: עמדה ראשונה ${OPEN_PCT.UTG}%, הייג׳ק ${OPEN_PCT.HJ}%, קאטאוף ${OPEN_PCT.CO}%, כפתור ${OPEN_PCT.BTN}%. וכשנכנסים, תמיד עם {{raise}}.`;
+    case 'vsOpen':
+      return 'מול {{raise}} צריך יד טובה יותר מזו שהיית פותח איתה. {{threebet}} רק עם הידיים הכי חזקות: זוגות גבוהים, אס-מלך, אס-מלכה.';
+    case 'bbLimp':
+      return 'מול {{limp}} מעלים עם ידיים חזקות (זוגות בינוניים ומעלה, אס עם קלף גבוה). עם כל השאר עושים {{check}} ורואים פלופ בחינם.';
+    case 'vs3bet':
+      return 'מול {{threebet}} ממשיכים בעיקר עם זוגות, אס-מלך ואס-מלכה. ידיים כמו מלך-נסיך או מלכה-נסיך זורקים, גם אם העלית איתן.';
+    case 'cbet':
+      return 'יש לך {{initiative|יוזמה}} ויד שמנצחת לרוב? מהמרים. אין לך כלום ויש כמה יריבים? {{check}}.';
+    case 'leadOOP':
+      return 'כשאתה פועל ראשון: עם יד חזקה מהמרים, עם כל השאר עושים {{check}} ומחכים לראות מה היריב עושה.';
+    default:
+      return `טבלת {{potodds}} שכדאי לזכור: הימור של שליש קופה → צריך לנצח 20%. חצי קופה → 25%. קופה מלאה → 33%. פעם וחצי קופה → 38%.${s.draw && s.street < 5 ? ' ולדרואו: {{outs}} × 4 בפלופ, × 2 בטרן.' : ''}`;
+  }
+}
 
 export function explain(s: Scenario, chosen: Action | 'timeout'): Explanation {
   const why: string[] = [];
@@ -415,7 +445,7 @@ export function explain(s: Scenario, chosen: Action | 'timeout'): Explanation {
       : `אתה פועל ראשון (בלי {{position|מיקום}}), אז קשה יותר לשחק את היד. זה מוריד קצת מהערך שלה.`);
   };
   const drawLine = () => {
-    if (!s.draw) return;
+    if (!s.draw || s.made.strength >= 3) return;
     const mult = s.street === 3 ? 4 : 2;
     why.push(`יש לך {{${s.draw.term}|${s.draw.plain}}}: עוד ${s.draw.outs} קלפים בחפיסה ({{outs}}) ישלימו לך את היד. לפי {{rule24}}: ${s.draw.outs}×${mult} ≈ ${Math.min(95, s.draw.outs * mult)}%.`);
   };
@@ -471,7 +501,7 @@ export function explain(s: Scenario, chosen: Action | 'timeout'): Explanation {
     }
     case 'cbet': {
       summary = `לפני הפלופ עשית {{raise}}, ו${s.n === 1 ? 'שחקן אחד השווה' : `${s.n} שחקנים השוו`}. ב${st} ${s.n === 1 ? 'הוא עשה' : 'כולם עשו'} {{check}} אליך.`;
-      why.push(`יש לך ${hand}${s.draw ? ` ו${s.draw.plain}` : ''}. ${s.correct === 'raise' ? `זה מנצח ${inWords(s.eff)} מול ${vs}.` : `זה מנצח רק ${inWords(s.eff)} מול ${vs}.`}`);
+      why.push(`יש לך ${hand}${s.draw && s.made.strength < 3 ? ` ו${s.draw.plain}` : ''}. ${s.correct === 'raise' ? `זה מנצח ${inWords(s.eff)} מול ${vs}.` : `זה מנצח רק ${inWords(s.eff)} מול ${vs}.`}`);
       drawLine();
       if (s.correct === 'raise') why.push(`עדיין יש לך {{initiative|יוזמה}}, אז הימור כאן ({{cbet}}) מרוויח: ידיים חלשות יותר ישלמו לך או יוותרו.`);
       else why.push(s.street === 5 ? 'בריבר כבר אין קלפים לבוא. אם תהמר, רק ידיים שמנצחות אותך ישלמו. עדיף {{check}} ולראות.' : `${s.n >= 2 ? 'מול כמה יריבים, יש סיכוי טוב שמישהו פגע. ' : ''}{{check}} נותן לך לראות עוד קלף בחינם.`);
@@ -498,7 +528,7 @@ export function explain(s: Scenario, chosen: Action | 'timeout'): Explanation {
     }
     default: {
       const potBefore = Number(s.meta.potBefore);
-      summary = `${s.ip ? 'היריב' : 'עשית {{check}}, והיריב'} הימר ${s.toCall} לתוך קופה של ${potBefore} ב${st}.${s.n > 1 ? ` עוד ${s.n - 1} שחקנים ביד ({{multiway}}).` : ''}`;
+      summary = `${s.ip ? 'היריב' : 'עשית {{check}}, והיריב'} הימר ${s.toCall} לתוך קופה של ${potBefore} ב${st}.${s.n > 1 ? ` ${s.n === 2 ? 'עוד שחקן אחד' : `עוד ${s.n - 1} שחקנים`} ביד ({{multiway}}).` : ''}`;
       why.push(`יש לך ${hand}, יד ${sw}.${s.street === 5 ? ' בריבר אין יותר קלפים: או שהיד שלך מנצחת או שלא.' : ''}`);
       drawLine();
       oddsLines();
@@ -540,5 +570,5 @@ export function explain(s: Scenario, chosen: Action | 'timeout'): Explanation {
     numbers.push({ label: s.toCall > 0 ? 'סף לרייז' : 'סף להימור', value: pct(s.raiseThr) });
     numbers.push({ label: 'חלק הוגן', value: pct(s.fair) });
   }
-  return { summary, why, mistake, numbers };
+  return { summary, why, rule: ruleOf(s), mistake, numbers };
 }

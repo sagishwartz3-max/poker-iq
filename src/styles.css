@@ -271,6 +271,14 @@ h1, h2, h3 { margin: 0; font-weight: 800; letter-spacing: -0.01em; text-wrap: ba
 .best { font-size: 15px; margin: 0 0 12px; color: var(--text-2); }
 .best b { color: var(--gold-1); font-weight: 800; }
 .box { padding: 12px 14px; border-radius: 16px; background: rgba(255,255,255,.05); border: 1px solid var(--glass-line); margin-bottom: 10px; font-size: 14.5px; line-height: 1.65; }
+.box.rule { background: linear-gradient(135deg, rgba(246,199,90,.12), rgba(246,199,90,.03)); border-color: rgba(246,199,90,.35); }
+.box.rule .box-t { color: var(--gold-2); }
+.streak-chip { position: fixed; left: 50%; top: calc(var(--safe-t) + 18px); z-index: 45; padding: 6px 14px; border-radius: 20px; font-weight: 900; font-size: 14px; pointer-events: none;
+  background: linear-gradient(135deg, #ff9a3d, #ff4d6d); color: #fff; box-shadow: 0 8px 24px -6px rgba(255,90,80,.7); white-space: nowrap; }
+.review-bar { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 20px; margin: -8px 0 22px; text-align: start; }
+.review-bar b { display: block; font-size: 15px; }
+.review-bar span { font-size: 12.5px; color: var(--text-2); }
+.review-bar .n { margin-inline-start: auto; min-width: 34px; height: 34px; border-radius: 17px; display: grid; place-items: center; font-weight: 900; background: rgba(255,93,110,.18); color: #ffb3bc; border: 1px solid rgba(255,93,110,.4); }
 .box.warn { background: rgba(255,93,110,.08); border-color: rgba(255,93,110,.3); }
 .box-t { font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--text-3); margin-bottom: 4px; }
 .why { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }

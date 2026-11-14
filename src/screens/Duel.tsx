@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mulberry32 } from '../engine/cards';
 import { ACT_NAME, grade, makeScenario, type Action, type Scenario } from '../engine/scenarios';
+import { rememberMistake } from '../game/progress';
 import { sfx } from '../game/sound';
 import { DUEL_CFG } from '../game/worlds';
 import { DUEL_HANDS, DUEL_SECONDS, DuelRoom, newCode, type DuelMsg, type Peer } from '../net/duel';
@@ -93,7 +94,7 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
     const pts = base ? base + Math.max(0, Math.round(50 * (1 - sec / DUEL_SECONDS))) : 0;
     setMine(m => ({ ...m, [i]: { action: a, pts } }));
     room.current?.send({ type: 'answer', i, action: a, pts, from: P.id });
-    update(p => { p.hands++; if (g !== 'b') p.correct++; });
+    update(p => { p.hands++; if (g !== 'b') p.correct++; else rememberMistake(p, s); });
     if (g === 'g') { sfx.good(); setBurst(b => b + 1); } else if (g === 'c') sfx.close(); else sfx.bad();
   }, [s, mine, i, count, P.id, update]);
 
