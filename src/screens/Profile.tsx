@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useState } from 'react';
-import { blank } from '../game/progress';
+import { blank, leaks } from '../game/progress';
 import { LEVEL_NAMES, levelOf } from '../game/worlds';
 import { PUBLIC_URL } from '../net/supabase';
 import { useApp } from '../ui/ctx';
@@ -8,7 +8,7 @@ import { I } from '../ui/Icons';
 import { shareLinks } from './Duel';
 
 export function Profile() {
-  const { P, update, toast, sync } = useApp();
+  const { P, update, toast, sync, go } = useApp();
   const [nick, setNick] = useState(P.nick);
   const [arm, setArm] = useState(false);
   const lv = levelOf(P.xp);
@@ -29,6 +29,31 @@ export function Profile() {
         <div className="glass stat"><span>ניצחונות</span><b className="num">{P.wins}</b></div>
         <div className="glass stat"><span>רצף יומי</span><b className="num">{P.dailyStreak}🔥</b></div>
       </div>
+      <div className="sec-title"><h2 className="h-md">מפת הדליפות שלי</h2><span className="muted" style={{ fontSize: 12 }}>איפה אתה מפסיד נקודות</span></div>
+      {(() => {
+        const L = leaks(P);
+        if (L.length < 2) return <div className="glass empty" style={{ marginBottom: 16 }}>שחק עוד קצת ({Math.max(0, 25 - P.hands)} ידיים בערך) ותראה כאן את החולשות והחוזקות שלך, עם אימון ממוקד לכל אחת.</div>;
+        const weak = L.slice(0, 4), strong = L.slice(-2).reverse();
+        const col = (a: number) => (a >= 80 ? 'var(--good)' : a >= 60 ? 'var(--close)' : 'var(--bad)');
+        return (
+          <div style={{ marginBottom: 16 }}>
+            {weak.map(l => (
+              <div key={l.key} className="glass leak">
+                <div><b>{l.name}</b><div className="muted" style={{ fontSize: 12 }}>{l.hands} ידיים</div></div>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <span className="acc num" style={{ color: col(l.acc) }}>{l.acc}%</span>
+                  <button className="btn gold" onClick={() => go('play', { mode: 'drill', drill: l.key })}>אמן</button>
+                </div>
+                <div className="bar"><i style={{ width: `${l.acc}%`, background: col(l.acc) }} /></div>
+              </div>
+            ))}
+            {strong[0] && strong[0].acc >= 75 && <p className="muted" style={{ fontSize: 13, margin: '4px 4px 0' }}>💪 הכי חזק אצלך: {strong.map(x => `${x.name} (${x.acc}%)`).join(' · ')}</p>}
+          </div>
+        );
+      })()}
+      <button className="glass list-btn" onClick={() => go('pro')} style={{ background: 'linear-gradient(135deg, rgba(246,199,90,.18), rgba(139,108,255,.12))' }}>
+        <span>✨ Poker IQ Pro: ניתוח ידיים, מאמן AI ופתרונות סולבר</span><span style={{ width: 20 }}>{I.back}</span>
+      </button>
       <div className="field">
         <label htmlFor="nick">הכינוי שלך</label>
         <div style={{ display: 'flex', gap: 8 }}>

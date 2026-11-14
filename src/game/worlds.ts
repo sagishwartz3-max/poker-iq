@@ -34,3 +34,15 @@ export const DUEL_CFG: GenCfg = { kinds: ALL_KINDS, opp: [1, 3], cands: 3 };
 export const LEVELS = [0, 800, 2000, 3800, 6000, 9000, 13000, 18000, 24000, 31000];
 export const LEVEL_NAMES = ['מתחיל', 'דג קטן', 'שחקן בית', 'קורא קלפים', 'גריינדר', 'כריש צעיר', 'רג׳ מנוסה', 'מקצוען', 'כריש', 'אגדת השולחן'];
 export const levelOf = (xp: number) => { let i = 0; while (i < LEVELS.length - 1 && xp >= LEVELS[i + 1]) i++; return i; };
+
+const PRE: GenCfg['kinds'] = ['open', 'vsOpen', 'bbLimp', 'vs3bet'];
+const POST: GenCfg['kinds'] = ['cbet', 'leadOOP', 'facingBet', 'checkRaised'];
+/** Targeted practice for one leak-map skill. `keep` filters spots the generator cannot target directly. */
+export function drillCfg(key: string): { cfg: GenCfg; keep?: (s: import('../engine/scenarios').Scenario) => boolean } {
+  const [t, v] = key.split(':');
+  if (t === 'k') return { cfg: { kinds: [v as GenCfg['kinds'][number]], opp: [1, 3], cands: 3 } };
+  if (t === 's') return v === '0' ? { cfg: { kinds: PRE, opp: [1, 3], cands: 3 } } : { cfg: { kinds: POST, streets: [Number(v) as 3 | 4 | 5], opp: [1, 3], cands: 3 } };
+  if (t === 'p') return { cfg: { kinds: POST, opp: [1, 2], cands: 3 }, keep: s => s.ip === (v === 'ip') };
+  if (t === 'n') return { cfg: { kinds: ['facingBet', 'cbet', 'vsOpen', 'bbLimp'], opp: [3, 5], cands: 3 }, keep: s => s.n >= 3 };
+  return { cfg: { kinds: ['facingBet'], streets: [3, 4], opp: [1, 2], draw: true, cands: 3 } };
+}

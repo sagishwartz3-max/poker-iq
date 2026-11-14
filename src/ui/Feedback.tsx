@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useMemo, useState } from 'react';
 import { ACT_NAME, explain, type Action, type Scenario } from '../engine/scenarios';
+import { Coach } from './Coach';
 import { I } from './Icons';
 import { Rich } from './Rich';
 
@@ -29,6 +30,7 @@ export function Feedback({ s, chosen, g, pts, onNext, nextLabel, extra, nextDisa
           {chosen !== 'timeout' && chosen !== s.correct && <>בחרת {ACT_NAME[chosen]}. </>}
           הכי טוב כאן: <b>{ACT_NAME[s.correct]}</b>
         </p>
+        <motion.p className="bottom-line" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>{ex.short}</motion.p>
         {extra}
         <div className="box"><div className="box-t">מה קרה ביד</div><Rich text={ex.summary} /></div>
         <div className="box">
@@ -37,6 +39,7 @@ export function Feedback({ s, chosen, g, pts, onNext, nextLabel, extra, nextDisa
         </div>
         <div className="box rule"><div className="box-t">💡 כלל אצבע לזכור</div><Rich text={ex.rule} /></div>
         {ex.mistake && <div className={`box ${g === 'b' ? 'warn' : ''}`}><div className="box-t">{g === 'b' ? 'איפה הטעות' : 'הערה'}</div><Rich text={ex.mistake} /></div>}
+        <Coach s={s} chosen={chosen} />
         <button className="adv-toggle" onClick={() => setAdv(a => !a)} aria-expanded={adv}>
           <span>למתקדמים: המספרים</span>
           <motion.span animate={{ rotate: adv ? 180 : 0 }} style={{ display: 'inline-flex', width: 18 }}>{I.chevron}</motion.span>

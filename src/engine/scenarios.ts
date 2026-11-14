@@ -395,7 +395,7 @@ export function inWords(p: number) {
 }
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-export interface Explanation { summary: string; why: string[]; rule: string; mistake?: string; numbers: { label: string; value: string }[] }
+export interface Explanation { short: string; summary: string; why: string[]; rule: string; mistake?: string; numbers: { label: string; value: string }[] }
 
 /** Share of all 1326 starting hands that each position opens with (from the Chen thresholds). */
 export const OPEN_PCT: Record<Pos, number> = (() => {
@@ -407,6 +407,19 @@ export const OPEN_PCT: Record<Pos, number> = (() => {
   }
   return out;
 })();
+
+/** One plain sentence: the decision and the single reason behind it. */
+function shortOf(s: Scenario): string {
+  if (s.kind === 'open') return s.correct === 'raise'
+    ? `יד מספיק טובה בשביל העמדה הזו, אז נכנסים עם העלאה.`
+    : `יש אחריך יותר מדי שחקנים בשביל יד כזו. לוותר לא עולה כלום.`;
+  if (s.toCall > 0) {
+    if (s.correct === 'fold') return 'אתה משלם יותר ממה שהיד שווה. לאורך זמן זה מפסיד.';
+    if (s.correct === 'call') return 'המחיר משתלם ביחס לקופה, אבל היד לא מספיק חזקה כדי להעלות.';
+    return 'היד שלך כנראה מובילה, אז מכניסים עוד כסף לקופה.';
+  }
+  return s.correct === 'raise' ? 'היד חזקה מספיק כדי להמר: ידיים חלשות יותר ישלמו לך.' : 'אין סיבה לשים כסף עכשיו. רואים עוד קלף בחינם.';
+}
 
 function ruleOf(s: Scenario): string {
   switch (s.kind) {
@@ -570,5 +583,5 @@ export function explain(s: Scenario, chosen: Action | 'timeout'): Explanation {
     numbers.push({ label: s.toCall > 0 ? 'סף לרייז' : 'סף להימור', value: pct(s.raiseThr) });
     numbers.push({ label: 'חלק הוגן', value: pct(s.fair) });
   }
-  return { summary, why, rule: ruleOf(s), mistake, numbers };
+  return { short: shortOf(s), summary, why, rule: ruleOf(s), mistake, numbers };
 }

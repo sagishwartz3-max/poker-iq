@@ -271,6 +271,33 @@ h1, h2, h3 { margin: 0; font-weight: 800; letter-spacing: -0.01em; text-wrap: ba
 .best { font-size: 15px; margin: 0 0 12px; color: var(--text-2); }
 .best b { color: var(--gold-1); font-weight: 800; }
 .box { padding: 12px 14px; border-radius: 16px; background: rgba(255,255,255,.05); border: 1px solid var(--glass-line); margin-bottom: 10px; font-size: 14.5px; line-height: 1.65; }
+.coach { margin: 4px 0 6px; }
+.coach-open { background: linear-gradient(135deg, rgba(139,108,255,.25), rgba(67,240,195,.12)); border-color: rgba(139,108,255,.45); }
+.coach-box { background: linear-gradient(135deg, rgba(139,108,255,.14), rgba(255,255,255,.03)); border-color: rgba(139,108,255,.4); }
+.coach-box .box-t { color: #c9bbff; }
+.coach-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.coach-chips .chip { cursor: pointer; }
+.coach-form { display: flex; gap: 8px; }
+.coach-form .input { height: 46px; font-size: 15px; }
+.coach-form .btn { min-height: 46px; }
+.coach-answer { margin: 12px 0 0; white-space: pre-wrap; line-height: 1.7; }
+.coach-thinking, .coach-note { margin: 10px 0 0; font-size: 13px; }
+.tiers { display: flex; flex-direction: column; gap: 12px; }
+.tier { width: 100%; text-align: start; padding: 16px 18px; border-radius: 22px; background: linear-gradient(135deg, rgba(var(--tier), .18), rgba(255,255,255,.03)); border-color: rgba(var(--tier), .35); }
+.tier.on { box-shadow: 0 0 0 2px rgba(var(--tier), .9), 0 0 30px rgba(var(--tier), .3); }
+.tier-head { display: flex; justify-content: space-between; align-items: baseline; }
+.tier-head b { font-size: 22px; font-weight: 900; }
+.tier-head span { font-size: 22px; font-weight: 900; }
+.tier-head small { font-size: 12px; font-weight: 500; color: var(--text-2); }
+.tier-who { font-size: 13px; color: var(--text-2); margin: 2px 0 8px; }
+.tier ul { margin: 0; padding-inline-start: 18px; font-size: 14px; line-height: 1.7; }
+.leak { padding: 12px 14px; border-radius: 18px; margin-bottom: 8px; display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; }
+.leak b { font-size: 14.5px; }
+.leak .bar { grid-column: 1 / -1; height: 7px; border-radius: 7px; background: rgba(255,255,255,.08); overflow: hidden; }
+.leak .bar i { display: block; height: 100%; border-radius: 7px; }
+.leak .acc { font-weight: 900; font-size: 15px; }
+.leak .btn { min-height: 36px; padding: 0 14px; font-size: 13px; }
+.bottom-line { margin: -4px 0 14px; font-size: 17px; font-weight: 700; line-height: 1.5; color: var(--text); }
 .box.rule { background: linear-gradient(135deg, rgba(246,199,90,.12), rgba(246,199,90,.03)); border-color: rgba(246,199,90,.35); }
 .box.rule .box-t { color: var(--gold-2); }
 .streak-chip { position: fixed; left: 50%; top: calc(var(--safe-t) + 18px); z-index: 45; padding: 6px 14px; border-radius: 20px; font-weight: 900; font-size: 14px; pointer-events: none;

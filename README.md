@@ -51,6 +51,21 @@ npm run build && npx cap sync      # מעתיק את המשחק לפרויקטי
 
 **מדיניות החנויות:** משחקי פוקר בלי כסף אמיתי מותרים, אבל מסווגים כ"הימורים מדומים". באפל הדירוג יהיה כנראה ‎17+‎, ובגוגל צריך לסמן את זה בשאלון התוכן. אסור להוסיף אפשרות לזכות או לקנות כסף אמיתי.
 
+## המאמן החכם (AI)
+השרת `supabase/functions/poker-coach` כבר פרוס ב-Supabase. כדי להפעיל אותו:
+1. ב-Supabase: Project → Edge Functions → Secrets.
+2. מוסיפים `OPENROUTER_API_KEY` עם המפתח מ-openrouter.ai. **לא שמים אותו בקוד ולא באפליקציה.**
+3. אופציונלי: `OPENROUTER_MODEL` (כל מזהה מודל של OpenRouter; ברירת המחדל בקוד היא `google/gemini-2.5-flash`, כדאי לוודא שהוא זמין בחשבון), ו-`COACH_DAILY_LIMIT` (שאלות ליום לשחקן, ברירת מחדל 15).
+
+## מדידה לניסוי החברתי
+כל האירועים נשמרים בטבלה `poker_events`: כניסה, הרשמה, סיום שלב, אתגר יומי, קרבות ושאלות למאמן. רשימת ההמתנה ל-Pro, כולל המחיר שכל שחקן ראה, נשמרת ב-`poker_waitlist`. שאילתות שימושיות:
+```sql
+-- כמה שחקנים חזרו ביום אחר מהיום הראשון שלהם
+select count(*) from (select player_id, count(distinct created_at::date) d from poker_events where event='app_open' group by 1) x where d > 1;
+-- כמה נרשמו ל-Pro לפי מסלול ומחיר
+select tier, price_seen, count(*) from poker_waitlist group by 1,2 order by 1,2;
+```
+
 ## בהמשך
 - התחברות עם Google ו-Apple, כדי להעביר התקדמות בין מכשירים. דורש הגדרת ספקים ב-Supabase ובחשבון Apple Developer. באפל חובה להציע Sign in with Apple אם מציעים Google.
 - התראות על אתגר יומי והזמנות לקרב.

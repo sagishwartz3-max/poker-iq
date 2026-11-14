@@ -2,9 +2,10 @@ import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { Card } from '../ui/Card';
 import { useApp } from '../ui/ctx';
+import { track } from '../net/supabase';
 
 export function Onboarding() {
-  const { update, sync } = useApp();
+  const { P, update, sync } = useApp();
   const [nick, setNick] = useState('');
   const cards = [8 * 4, 9 * 4 + 1, 10 * 4 + 2, 11 * 4 + 3, 12 * 4];
   return (
@@ -29,7 +30,7 @@ export function Onboarding() {
             <label htmlFor="onbNick">איך יקראו לך בשולחן?</label>
             <input id="onbNick" className="input" maxLength={18} value={nick} onChange={e => setNick(e.target.value)} placeholder="הכינוי שלך" autoComplete="nickname" />
           </div>
-          <button className="btn gold wide" disabled={!nick.trim()} onClick={() => { update(p => { p.nick = nick.trim().slice(0, 18); p.onboarded = true; }); setTimeout(sync, 50); }}>בוא נתחיל</button>
+          <button className="btn gold wide" disabled={!nick.trim()} onClick={() => { update(p => { p.nick = nick.trim().slice(0, 18); p.onboarded = true; }); setTimeout(sync, 50); track(P, 'onboard', { ref: document.referrer ? new URL(document.referrer).hostname : '' }); }}>בוא נתחיל</button>
         </motion.div>
       </div>
     </div>

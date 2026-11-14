@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { nodeId, today, unlocked } from '../game/progress';
+import { dueMistakes, nodeId, today, unlocked } from '../game/progress';
 import { LEVELS, LEVEL_NAMES, levelOf, WORLDS } from '../game/worlds';
 import { useApp } from '../ui/ctx';
 import { I } from '../ui/Icons';
@@ -26,6 +26,7 @@ export function Home() {
   const dailyDone = P.daily?.date === today();
   let nextFound = false;
   const total = Object.values(P.stars).reduce((a, b) => a + b, 0);
+  const due = dueMistakes(P).length;
   return (
     <div className="screen">
       <Header />
@@ -53,11 +54,11 @@ export function Home() {
           <span className="cta-s">ידיים בלי סוף</span>
         </motion.button>
       </div>
-      {P.mistakes.length > 0 && (
+      {due > 0 && (
         <motion.button className="glass review-bar" onClick={() => go('play', { mode: 'review' })} whileTap={{ scale: 0.98 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <span style={{ fontSize: 26 }}>🎯</span>
-          <div><b>תקן את הטעויות שלך</b><span>הידיים שטעית בהן חוזרות עד שתצליח</span></div>
-          <span className="n num">{P.mistakes.length}</span>
+          <div><b>חזרה על טעויות</b><span>ידיים שטעית בהן חוזרות אחרי יום, 3 ימים ושבוע, עד שהן נכנסות לראש</span></div>
+          <span className="n num">{due}</span>
         </motion.button>
       )}
       <div className="sec-title"><h2 className="h-md">המסע</h2><span className="muted num">{total} / {WORLDS.length * 9} ★</span></div>

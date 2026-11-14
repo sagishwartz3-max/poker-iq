@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GLOSSARY } from './engine/glossary';
 import { load, persist, type Progress } from './game/progress';
 import { setSound } from './game/sound';
-import { savePlayer } from './net/supabase';
+import { savePlayer, track } from './net/supabase';
 import { Board } from './screens/Board';
 import { Daily } from './screens/Daily';
 import { Duel } from './screens/Duel';
@@ -11,6 +11,7 @@ import { Home } from './screens/Home';
 import { Learn } from './screens/Learn';
 import { Onboarding } from './screens/Onboarding';
 import { Play } from './screens/Play';
+import { Pro } from './screens/Pro';
 import { Profile } from './screens/Profile';
 import { Background } from './ui/Background';
 import { Ctx, type AppCtx, type PlayArgs, type Screen } from './ui/ctx';
@@ -40,6 +41,7 @@ export default function App() {
 
   useEffect(() => { setSound(P.sound); }, [P.sound]);
   useEffect(() => { if (urlDuel) history.replaceState(null, '', location.pathname); }, []);
+  useEffect(() => { if (P.onboarded) track(P, 'app_open', { via: urlDuel ? 'duel_link' : 'direct', hands: P.hands, xp: P.xp }); }, [P.onboarded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = useCallback((fn: (p: Progress) => void) => {
     setP(prev => { const next: Progress = JSON.parse(JSON.stringify(prev)); fn(next); persist(next); return next; });
@@ -52,7 +54,7 @@ export default function App() {
   const go = useCallback((s: Screen, args?: PlayArgs) => { if (args) { setPlay(args); setPlayKey(k => k + 1); } setScreen(s); }, []);
   const ctx: AppCtx = useMemo(() => ({ P, update, term: setTerm, toast, go, sync }), [P, update, toast, go, sync]);
 
-  const showTabs = P.onboarded && screen !== 'play' && screen !== 'daily' && !duelLive;
+  const showTabs = P.onboarded && screen !== 'play' && screen !== 'daily' && screen !== 'pro' && !duelLive;
   const t = term ? GLOSSARY[term] : null;
 
   return (
@@ -69,6 +71,7 @@ export default function App() {
               : screen === 'duel' ? <Duel initialCode={urlDuel} onPlaying={setDuelLive} />
               : screen === 'board' ? <Board />
               : screen === 'learn' ? <Learn />
+              : screen === 'pro' ? <Pro />
               : <Profile />}
           </motion.div>
         </AnimatePresence>

@@ -2,11 +2,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mulberry32 } from '../engine/cards';
 import { ACT_NAME, grade, makeScenario, type Action, type Scenario } from '../engine/scenarios';
-import { rememberMistake } from '../game/progress';
+import { recordSkill, rememberMistake } from '../game/progress';
 import { sfx } from '../game/sound';
 import { DUEL_CFG } from '../game/worlds';
 import { DUEL_HANDS, DUEL_SECONDS, DuelRoom, newCode, type DuelMsg, type Peer } from '../net/duel';
-import { PUBLIC_URL, recordMatch } from '../net/supabase';
+import { PUBLIC_URL, recordMatch, track } from '../net/supabase';
 import { Burst } from '../ui/Burst';
 import { useApp } from '../ui/ctx';
 import { Feedback } from '../ui/Feedback';
@@ -70,6 +70,7 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
     const list: Scenario[] = [];
     for (let k = 0; k < DUEL_HANDS; k++) list.push(makeScenario(DUEL_CFG, rng));
     recorded.current = false;
+    track(P, 'duel_start', { host });
     setSeed(sd); setHands(list); setMine({}); setTheirs({}); setI(0); setView('match'); setCount(3);
   };
   const goHand = (k: number) => { setI(k); t0.current = performance.now(); };
@@ -94,7 +95,7 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
     const pts = base ? base + Math.max(0, Math.round(50 * (1 - sec / DUEL_SECONDS))) : 0;
     setMine(m => ({ ...m, [i]: { action: a, pts } }));
     room.current?.send({ type: 'answer', i, action: a, pts, from: P.id });
-    update(p => { p.hands++; if (g !== 'b') p.correct++; else rememberMistake(p, s); });
+    update(p => { p.hands++; recordSkill(p, s, g === 'g' ? 100 : g === 'c' ? 70 : 0); if (g !== 'b') p.correct++; else rememberMistake(p, s); });
     if (g === 'g') { sfx.good(); setBurst(b => b + 1); } else if (g === 'c') sfx.close(); else sfx.bad();
   }, [s, mine, i, count, P.id, update]);
 
@@ -125,6 +126,7 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
     const xp = Math.round(myScore * 0.4) + (won ? 150 : 0);
     update(p => { p.xp += xp; if (won) p.wins++; else p.losses++; });
     recordMatch(P, won).catch(() => {});
+    track(P, 'duel_end', { won, my: myScore, opp: oppScore, host });
     sync();
     if (won) { sfx.level(); setBurst(b => b + 1); } else sfx.bad();
     // eslint-disable-next-line react-hooks/exhaustive-deps

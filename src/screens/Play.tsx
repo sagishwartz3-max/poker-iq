@@ -2,9 +2,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { hashStr, mulberry32 } from '../engine/cards';
 import { grade, makeScenario, type Action, type GenCfg, type Scenario } from '../engine/scenarios';
-import { forgetMistake, nodeId, rememberMistake, today, unlocked, yesterday } from '../game/progress';
+import { dueMistakes, nodeId, promoteMistake, recordSkill, rememberMistake, SKILLS, today, unlocked, yesterday } from '../game/progress';
 import { sfx } from '../game/sound';
-import { DAILY_CFG, HANDS_PER_ROUND, LEVEL_NAMES, levelOf, stageCfg, WORLDS } from '../game/worlds';
+import { track } from '../net/supabase';
+import { DAILY_CFG, drillCfg, HANDS_PER_ROUND, LEVEL_NAMES, levelOf, stageCfg, WORLDS } from '../game/worlds';
 import { Burst } from '../ui/Burst';
 import { useApp, type PlayArgs } from '../ui/ctx';
 import { Feedback } from '../ui/Feedback';
@@ -16,7 +17,11 @@ type Phase = 'lesson' | 'decide' | 'feedback' | 'done';
 
 export function Play({ args }: { args: PlayArgs }) {
   const { P, update, go, toast, sync } = useApp();
-  const { cfg, title, sub, timer, seed } = useMemo(() => {
+  const { cfg, title, sub, timer, seed, keep } = useMemo((): { cfg: GenCfg; title: string; sub: string; timer: number; seed: number; keep?: (s: Scenario) => boolean } => {
+    if (args.mode === 'drill') {
+      const d = drillCfg(args.drill!);
+      return { cfg: d.cfg, keep: d.keep, title: 'אימון ממוקד', sub: SKILLS[args.drill!] || '', timer: 0, seed: (Math.random() * 2 ** 32) >>> 0 };
+    }
     if (args.mode === 'stage') {
       const W = WORLDS[args.w!];
       return { cfg: stageCfg(args.w!, args.l!), title: W.name, sub: `שלב ${args.l! + 1} מתוך 3`, timer: W.timer ? W.timer[args.l!] : 0, seed: (Math.random() * 2 ** 32) >>> 0 };
@@ -39,16 +44,18 @@ export function Play({ args }: { args: PlayArgs }) {
   const [result, setResult] = useState<{ stars: number; xp: number; lvUp: number | null } | null>(null);
   const t0 = useRef(0);
   const endless = args.mode === 'free';
-  const queue = useRef<Scenario[]>(args.mode === 'review' ? [...P.mistakes].sort(() => Math.random() - 0.5).slice(0, HANDS_PER_ROUND) : []);
+  const short = args.mode === 'review' || args.mode === 'drill';
+  const queue = useRef<Scenario[]>(args.mode === 'review' ? dueMistakes(P).map(m => m.s).sort(() => Math.random() - 0.5).slice(0, HANDS_PER_ROUND) : []);
   const total = args.mode === 'review' ? queue.current.length : HANDS_PER_ROUND;
   const [streak, setStreak] = useState(0);
 
   const deal = useCallback(() => {
-    const sc = args.mode === 'review' ? queue.current[i] : makeScenario(cfg, rng.current);
+    let sc = args.mode === 'review' ? queue.current[i] : makeScenario(cfg, rng.current);
+    if (keep) for (let t = 0; t < 30 && sc && !keep(sc); t++) sc = makeScenario(cfg, rng.current);
     if (!sc) return;
     setS(sc); setLast(null); t0.current = performance.now();
     sc.board.forEach((_, k) => sfx.deal(k));
-  }, [cfg, i, args.mode]);
+  }, [cfg, i, args.mode, keep]);
 
   useEffect(() => { if (phase === 'decide' && !s) deal(); }, [phase, s, deal]);
 
@@ -63,8 +70,9 @@ export function Play({ args }: { args: PlayArgs }) {
     setPoints(p => p + pts);
     update(p => {
       p.hands++; if (g !== 'b') p.correct++;
-      if (g === 'b' && args.mode !== 'review') rememberMistake(p, s);
-      if (g !== 'b' && args.mode === 'review') forgetMistake(p, s);
+      recordSkill(p, s, g === 'g' ? 100 : g === 'c' ? 70 : 0);
+      if (g === 'b') rememberMistake(p, s);
+      else if (args.mode === 'review') promoteMistake(p, s);
     });
     setStreak(x => (g === 'g' ? x + 1 : 0));
     if (g === 'g') { sfx.good(); setBurst(b => b + 1); } else if (g === 'c') sfx.close(); else sfx.bad();
@@ -80,6 +88,7 @@ export function Play({ args }: { args: PlayArgs }) {
 
   const finish = () => {
     const sum = points;
+    track(P, `${args.mode}_done`, { w: args.w, l: args.l, drill: args.drill, points: sum, good: res.filter(x => x === 'g').length, of: total });
     if (args.mode === 'daily') {
       const squares = res.map(x => (x === 'g' ? '🟩' : x === 'c' ? '🟨' : '🟥')).join('');
       update(p => {
@@ -90,10 +99,13 @@ export function Play({ args }: { args: PlayArgs }) {
       });
       sync(); toast(`+${Math.round(sum * 0.5)} XP`); go('daily'); return;
     }
-    if (args.mode === 'review') {
-      const fixed = res.filter(x => x !== 'b').length;
-      update(p => { p.xp += fixed * 20; }); sync();
-      toast(fixed ? `תיקנת ${fixed} טעויות · +${fixed * 20} XP` : 'נסה שוב, ההסבר יעזור'); go('home'); return;
+    if (args.mode === 'review' || args.mode === 'drill') {
+      const good = res.filter(x => x !== 'b').length;
+      const xp = good * (args.mode === 'review' ? 20 : 15);
+      update(p => { p.xp += xp; }); sync();
+      toast(args.mode === 'review' ? (good ? `תיקנת ${good} טעויות · +${xp} XP. הן יחזרו בעוד כמה ימים לבדיקה` : 'נסה שוב, ההסבר יעזור')
+        : `${good}/${total} נכונות · +${xp} XP`);
+      go(args.mode === 'drill' ? 'profile' : 'home'); return;
     }
     const frac = sum / (HANDS_PER_ROUND * 100);
     const stars = frac >= 0.9 ? 3 : frac >= 0.75 ? 2 : frac >= 0.6 ? 1 : 0;
@@ -139,7 +151,7 @@ export function Play({ args }: { args: PlayArgs }) {
       <AnimatePresence>
         {phase === 'feedback' && s && last && (
           <Feedback key={'fb' + i} s={s} chosen={last.a} g={last.g} pts={last.pts} onNext={next}
-            nextLabel={!endless && i >= total - 1 ? (args.mode === 'review' ? 'סיום' : 'לתוצאות') : 'יד הבאה'} />
+            nextLabel={!endless && i >= total - 1 ? (short ? 'סיום' : 'לתוצאות') : 'יד הבאה'} />
         )}
       </AnimatePresence>
 

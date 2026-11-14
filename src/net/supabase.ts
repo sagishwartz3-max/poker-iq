@@ -43,3 +43,28 @@ export async function leaderboard(kind: 'xp' | 'daily' | 'wins'): Promise<Row[]>
   if (error) throw error;
   return (data || []) as Row[];
 }
+
+/* ---------- product analytics (for the social experiment) ---------- */
+let trackOff = false;
+export function track(p: Progress, event: string, meta: Record<string, unknown> = {}) {
+  if (trackOff) return;
+  supabase.rpc('poker_track', { p_id: p.id, p_event: event, p_meta: meta }).then(({ error }) => { if (error) trackOff = true; });
+}
+
+/* ---------- Pro waitlist ("fake door" price test) ---------- */
+export async function joinWaitlist(p: Progress, tier: 'plus' | 'pro' | 'elite', price: string, contact: string) {
+  await savePlayer(p).catch(() => {});
+  const { error } = await supabase.rpc('poker_join_waitlist', { p_id: p.id, p_secret: p.secret, p_tier: tier, p_price: price, p_contact: contact });
+  if (error) throw error;
+}
+
+/* ---------- AI coach ---------- */
+export type CoachResult = { ok: true; answer: string; left: number } | { ok: false; reason: 'not_configured' | 'limit' | 'error' };
+export async function askCoach(p: Progress, spot: string, question: string): Promise<CoachResult> {
+  await savePlayer(p).catch(() => {});
+  const { data, error } = await supabase.functions.invoke('poker-coach', { body: { playerId: p.id, secret: p.secret, spot, question } });
+  if (!error && data?.answer) return { ok: true, answer: data.answer, left: data.left };
+  let code = '';
+  try { code = (await (error as any)?.context?.json?.())?.error || ''; } catch { /* no body */ }
+  return { ok: false, reason: code === 'not_configured' ? 'not_configured' : code === 'limit' ? 'limit' : 'error' };
+}
