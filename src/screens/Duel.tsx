@@ -5,7 +5,7 @@ import { ACT_NAME, grade, makeScenario, type Action, type Scenario } from '../en
 import { recordSkill, rememberMistake } from '../game/progress';
 import { sfx } from '../game/sound';
 import { DUEL_CFG } from '../game/worlds';
-import { DUEL_HANDS, DUEL_SECONDS, DuelRoom, newCode, type DuelMsg, type Peer } from '../net/duel';
+import { DUEL_HANDS, DUEL_SECONDS, DuelRoom, newCode, seated, type DuelMsg, type Peer } from '../net/duel';
 import { PUBLIC_URL, recordMatch, track } from '../net/supabase';
 import { Burst } from '../ui/Burst';
 import { useApp } from '../ui/ctx';
@@ -13,7 +13,7 @@ import { Feedback } from '../ui/Feedback';
 import { I } from '../ui/Icons';
 import { Spot } from '../ui/Spot';
 
-type View = 'lobby' | 'room' | 'match' | 'end';
+type View = 'lobby' | 'room' | 'match' | 'end' | 'full';
 type Ans = { action: Action | 'timeout'; pts: number };
 
 export function shareLinks(text: string, url: string) {
@@ -42,28 +42,50 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
   const room = useRef<DuelRoom | null>(null);
   const t0 = useRef(0);
   const recorded = useRef(false);
-  const me: Peer = { id: P.id, nick: P.nick || 'שחקן', host };
-  const opp = peers.find(p => p.id !== P.id);
+  const me: Peer = { id: P.id, nick: P.nick || 'שחקן', host, at: 0 };
+  const oppId = useRef<string | null>(null);
+  const joinedAt = useRef(0);
+  const seats = seated(peers);
+  const amSeated = seats.some(p => p.id === P.id);
+  // once a match starts the opponent is locked, so nobody who joins later can take their place
+  const opp = oppId.current ? peers.find(p => p.id === oppId.current) : seats.find(p => p.id !== P.id);
 
   useEffect(() => { onPlaying(view === 'match'); }, [view, onPlaying]);
   useEffect(() => () => { room.current?.leave(); onPlaying(false); }, [onPlaying]);
 
   const onMsg = useCallback((m: DuelMsg) => {
-    if (m.type === 'start') startMatch(m.seed);
-    else if (m.type === 'answer') setTheirs(t => ({ ...t, [m.i]: { action: m.action, pts: m.pts } }));
-    else if (m.type === 'next') goHand(m.i);
-    else if (m.type === 'bye') toast('היריב יצא מהחדר');
+    if (m.type === 'start') {
+      if (!m.players.includes(P.id)) return; // not one of the two players
+      oppId.current = m.players.find(x => x !== P.id) || null;
+      startMatch(m.seed);
+    } else if (m.type === 'answer') { if (m.from === oppId.current) setTheirs(t => ({ ...t, [m.i]: { action: m.action, pts: m.pts } })); }
+    else if (m.type === 'next') { if (m.from === oppId.current) goHand(m.i); }
+    else if (m.type === 'bye') { if (m.from === oppId.current) toast('היריב יצא מהחדר'); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const enter = (c: string, asHost: boolean) => {
     room.current?.leave();
     setCode(c); setHost(asHost); setPeers([]); setView('room');
-    const r = new DuelRoom(c, { id: P.id, nick: P.nick || 'שחקן', host: asHost }, setPeers, onMsg, setStatus);
+    oppId.current = null; joinedAt.current = Date.now();
+    const r = new DuelRoom(c, { id: P.id, nick: P.nick || 'שחקן', host: asHost, at: joinedAt.current }, setPeers, onMsg, setStatus);
     r.join(); room.current = r;
   };
 
   useEffect(() => { if (initialCode && initialCode.length === 5) enter(initialCode.toUpperCase(), false); /* eslint-disable-next-line */ }, []);
+
+  // the room already has two players: step out so their match is not disturbed
+  useEffect(() => {
+    if (view === 'room' && peers.length > 2 && !amSeated) { room.current?.leave(); room.current = null; setView('full'); }
+  }, [view, peers.length, amSeated]);
+
+  const begin = (round: number) => {
+    if (!opp) return;
+    const sd = (Math.random() * 2 ** 32) >>> 0;
+    oppId.current = opp.id;
+    room.current?.send({ type: 'start', seed: sd, round, players: [P.id, opp.id] });
+    startMatch(sd);
+  };
 
   const startMatch = (sd: number) => {
     const rng = mulberry32(sd);
@@ -115,7 +137,7 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
 
   const advance = () => {
     if (i >= DUEL_HANDS - 1) { setView('end'); return; }
-    room.current?.send({ type: 'next', i: i + 1 });
+    room.current?.send({ type: 'next', i: i + 1, from: P.id });
     goHand(i + 1);
   };
 
@@ -156,6 +178,17 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
     </div>
   );
 
+  if (view === 'full') return (
+    <div className="screen">
+      <motion.div className="glass empty" style={{ marginTop: 40 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+        <div style={{ fontSize: 44 }}>🚪</div>
+        <h2 className="h-lg" style={{ margin: '8px 0' }}>החדר הזה מלא</h2>
+        <p style={{ marginTop: 0 }}>כבר משחקים בו שני שחקנים. אפשר לפתוח חדר חדש ולהזמין חבר.</p>
+        <button className="btn violet wide" onClick={() => setView('lobby')}>לפתיחת חדר חדש</button>
+      </motion.div>
+    </div>
+  );
+
   if (view === 'room') return (
     <div className="screen">
       <div className="play-top" style={{ marginBottom: 12 }}>
@@ -189,9 +222,8 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
             <button className="btn wide" style={{ marginTop: 10 }} onClick={async () => ((await sh.copy()) ? toast('הקישור הועתק') : toast(link))}>{I.copy} העתק קישור</button>
           </>
         )}
-        {host && opp && <motion.button className="btn gold wide" initial={{ scale: 0.8 }} animate={{ scale: 1 }} onClick={() => { const sd = (Math.random() * 2 ** 32) >>> 0; room.current?.send({ type: 'start', seed: sd, round: 1 }); startMatch(sd); }}>התחל קרב</motion.button>}
+        {host && opp && <motion.button className="btn gold wide" initial={{ scale: 0.8 }} animate={{ scale: 1 }} onClick={() => begin(1)}>התחל קרב</motion.button>}
         {!host && <p className="muted">{opp ? `מחכים ש${opp.nick} יתחיל את הקרב…` : 'מחכה למארח…'}</p>}
-        {peers.length > 2 && <p className="muted">יש בחדר יותר משני שחקנים. רק שני הראשונים משחקים.</p>}
       </motion.div>
     </div>
   );
@@ -208,7 +240,7 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
             <div className="stat"><span>{opp?.nick || 'היריב'}</span><b className="num">{oppScore}</b></div>
           </div>
           <div className="modal-actions">
-            {host && opp && <button className="btn gold wide" onClick={() => { const sd = (Math.random() * 2 ** 32) >>> 0; room.current?.send({ type: 'start', seed: sd, round: 2 }); startMatch(sd); }}>משחק חוזר</button>}
+            {host && opp && <button className="btn gold wide" onClick={() => begin(2)}>משחק חוזר</button>}
             {!host && opp && <p className="muted" style={{ margin: 0 }}>המארח יכול להתחיל משחק חוזר</p>}
             <a className="btn wa wide" href={shareLinks(`ניצחתי ${myScore}:${oppScore} בקרב פוקר ב-Poker IQ. מי הבא? 😎`, PUBLIC_URL).wa} target="_blank" rel="noreferrer">{I.wa} שתף את התוצאה</a>
             <button className="btn wide" onClick={() => { room.current?.leave(); room.current = null; setView('lobby'); go('duel'); }}>יציאה</button>
