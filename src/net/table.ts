@@ -33,7 +33,7 @@ export class TableNet {
   private priv!: CryptoKey;
   private pub!: JsonWebKey;
   private keys = new Map<string, CryptoKey>();
-  constructor(public code: string, public me: { id: string; nick: string }, public isHost: boolean, private h: TableHandlers) {}
+  constructor(public code: string, public channel: string, public me: { id: string; nick: string }, public isHost: boolean, private h: TableHandlers) {}
 
   private async loadKeys() {
     const k = `pokeriq-tkey-${this.code}-${this.me.id}`;
@@ -69,7 +69,7 @@ export class TableNet {
 
   async join() {
     await this.loadKeys();
-    const ch = supabase.channel(`pokeriq-table-${this.code}`, { config: { presence: { key: this.me.id }, broadcast: { self: false } } });
+    const ch = supabase.channel(`pokeriq-table-${this.channel}`, { config: { presence: { key: this.me.id }, broadcast: { self: false } } });
     ch.on('presence', { event: 'sync' }, () => {
       const st = ch.presenceState<TPeer>();
       this.peers = Object.values(st).map(l => l[0]).filter(p => p && p.pub).map(p => ({ id: p.id, nick: p.nick, host: !!p.host, pub: p.pub, at: p.at || 0 }));

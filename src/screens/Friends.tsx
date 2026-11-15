@@ -3,10 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isRed, madeHand, RN, SUITS } from '../engine/cards';
 import { act, BLINDS, canRebuy, DEFAULT_CFG, endHand, gift, newTable, publicView, rebuy, seat, startHand, timeoutAction, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
 import { sfx } from '../game/sound';
-import { PUBLIC_URL, track } from '../net/supabase';
+import { createRoom, getRoom, PUBLIC_URL, track } from '../net/supabase';
 import { TableNet, type Cmd, type TPeer } from '../net/table';
-import { newCode } from '../net/duel';
 import { Burst } from '../ui/Burst';
+import { Chips } from '../ui/Chips';
+import { Dial } from '../ui/Dial';
 import { useApp } from '../ui/ctx';
 import { I } from '../ui/Icons';
 import { shareLinks } from './Duel';
@@ -47,6 +48,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const [peek, setPeek] = useState(false);
   const [raiseTo, setRaiseTo] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
+  const [tray, setTray] = useState(false);
   const [giftAmt, setGiftAmt] = useState('');
   const [now, setNow] = useState(Date.now());
   const [bubbles, setBubbles] = useState<Record<string, { e: string; k: number }>>({});
@@ -102,16 +104,26 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   }, [isHost, code, commit, dealOut, P.id]);
 
   /* ---------------- joining ---------------- */
-  const enter = async (c: string, asHost: boolean) => {
+  const [busy, setBusy] = useState(false);
+  const enter = async (codeIn: string | null) => {
+    if (busy) return;
     if (!crypto?.subtle) { toast('הדפדפן הזה לא תומך בהצפנה שהשולחן צריך'); return; }
+    setBusy(true);
+    let rm;
+    try { rm = codeIn ? await getRoom(codeIn, 'table') : await createRoom(P, 'table'); }
+    catch { setBusy(false); toast('אין חיבור לשרת. בדוק שיש אינטרנט ונסה שוב.'); return; }
+    setBusy(false);
+    if (!rm) { toast('אין שולחן עם הקוד הזה. בדוק את הקוד או בקש קישור חדש.'); return; }
+    const c = rm.code, host = rm.hostId === P.id;
     net.current?.leave();
-    let host = asHost;
     S.current = null;
-    try { const saved = JSON.parse(localStorage.getItem(saveKey(c)) || 'null') as TS | null; if (saved && saved.hostId === P.id) { S.current = saved; host = true; if (saved.phase === 'hand') saved.deadline = Date.now() + saved.cfg.turnSec * 1000; } } catch { /* no save */ }
-    if (host && !S.current) { S.current = newTable(c, P.id, cfg); seat(S.current, P.id, P.nick || 'שחקן'); }
-    if (host) { try { localStorage.setItem(LAST_HOSTED, c); } catch { /* storage off */ } }
+    if (host) {
+      try { const saved = JSON.parse(localStorage.getItem(saveKey(c)) || 'null') as TS | null; if (saved && saved.hostId === P.id) { S.current = saved; if (saved.phase === 'hand') saved.deadline = Date.now() + saved.cfg.turnSec * 1000; } } catch { /* no save */ }
+      if (!S.current) { S.current = newTable(c, P.id, cfg); seat(S.current, P.id, P.nick || 'שחקן'); }
+      try { localStorage.setItem(LAST_HOSTED, c); } catch { /* storage off */ }
+    }
     setIsHost(host); setCode(c); setV(null); setMine(null); setPeers([]);
-    const n = new TableNet(c, { id: P.id, nick: P.nick || 'שחקן' }, host, {
+    const n = new TableNet(c, rm.channel, { id: P.id, nick: P.nick || 'שחקן' }, host, {
       onPeers: setPeers, onStatus: setStatus,
       onState: v => { setV(v); setSkew(v.at - Date.now()); },
       onCards: (hand, cards) => setMine({ hand, cards }),
@@ -123,7 +135,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     if (host) commit();
     track(P, 'table_enter', { host });
   };
-  useEffect(() => { if (initialCode && initialCode.length === 5) enter(initialCode.toUpperCase(), false); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { if (initialCode && initialCode.length === 5) enter(initialCode.toUpperCase()); /* eslint-disable-next-line */ }, []);
 
   // players: say hello until the host answers with the table state
   const hostHere = peers.some(p => p.host);
@@ -170,14 +182,14 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         <button className="icon-btn" onClick={() => go('duel')} aria-label="חזרה">{I.back}</button>
         <div className="play-title"><b>שולחן פוקר לחברים</b><span>טקסס הולדם, ז׳יטונים בלבד</span></div>
       </div>
-      {lastHost && <button className="glass list-btn" onClick={() => enter(lastHost, true)}><span>חזרה לשולחן שפתחתי ({lastHost})</span><span style={{ width: 20 }}>{I.back}</span></button>}
+      {lastHost && <button className="glass list-btn" onClick={() => enter(lastHost)}><span>חזרה לשולחן שפתחתי ({lastHost})</span><span style={{ width: 20 }}>{I.back}</span></button>}
       <motion.div className="glass" style={{ padding: 18, borderRadius: 24, marginBottom: 14 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         <h3 className="h-md" style={{ marginBottom: 12 }}>פתח שולחן (אתה המנהל)</h3>
         <Opt label="ז׳יטונים לכל שחקן" value={cfg.stack} set={v => setCfg({ ...cfg, stack: v })} opts={[[1000, '1,000'], [2000, '2,000'], [5000, '5,000'], [10000, '10,000']]} />
         <Opt label="הבליינדים עולים כל" value={cfg.levelMin} set={v => setCfg({ ...cfg, levelMin: v })} opts={[[0, 'לא עולים'], [5, '5 דק׳'], [10, '10 דק׳'], [15, '15 דק׳'], [20, '20 דק׳']]} />
         <Opt label="כמה ריביי מותר לכל שחקן" value={cfg.rebuys} set={v => setCfg({ ...cfg, rebuys: v })} opts={[[0, 'בלי'], [1, '1'], [2, '2'], [3, '3'], [-1, 'בלי הגבלה']]} />
         <Opt label="זמן לכל תור" value={cfg.turnSec} set={v => setCfg({ ...cfg, turnSec: v })} opts={[[20, '20 שנ׳'], [30, '30 שנ׳'], [45, '45 שנ׳'], [60, 'דקה']]} />
-        <button className="btn gold wide" onClick={() => enter(newCode(), true)}>פתח שולחן</button>
+        <button className="btn gold wide" disabled={busy} onClick={() => enter(null)}>פתח שולחן</button>
       </motion.div>
       <div className="glass" style={{ padding: 18, borderRadius: 24 }}>
         <h3 className="h-md">הצטרפות לשולחן</h3>
@@ -185,7 +197,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           <label htmlFor="tcode">קוד שולחן (5 תווים)</label>
           <input id="tcode" className="input code-input" maxLength={5} value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="ABCDE" autoComplete="off" />
         </div>
-        <button className="btn violet wide" disabled={joinCode.length !== 5} onClick={() => enter(joinCode, false)}>הצטרף</button>
+        <button className="btn violet wide" disabled={joinCode.length !== 5 || busy} onClick={() => enter(joinCode)}>הצטרף</button>
       </div>
       <p className="muted" style={{ fontSize: 12, textAlign: 'center', marginTop: 14 }}>משחקים על ז׳יטונים וירטואליים בלבד. אין באפליקציה כסף אמיתי.</p>
     </div>
@@ -244,134 +256,139 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
 
   /* ---------------- the table ---------------- */
   const N = V.players.length, hi = Math.max(0, V.players.findIndex(p => p.id === P.id));
-  const pos = (i: number) => { const a = ((90 + (360 / N) * ((i - hi + N) % N)) * Math.PI) / 180; return { x: 50 + 45 * Math.cos(a), y: 50 + 41 * Math.sin(a) }; };
-  const mid = (p: { x: number; y: number }, t: number) => ({ x: p.x + (50 - p.x) * t, y: p.y + (47 - p.y) * t });
+  const pos = (i: number) => { const a = ((90 + (360 / N) * ((i - hi + N) % N)) * Math.PI) / 180; return { x: 50 + 40 * Math.cos(a), y: 50 + 48 * Math.sin(a) }; };
+  const mid = (p: { x: number; y: number }, t: number) => ({ x: p.x + (50 - p.x) * t, y: p.y + (46 - p.y) * t });
   const turnP = V.players.find(p => p.id === V.turn);
-  const hand = myCards && peek ? madeHand(myCards, V.board).name : '';
+  const showMine = peek || V.phase !== 'hand';
   const potNow = V.pot;
-  const presets: [string, number][] = [['מינימום', minTo], ['½ קופה', V.curBet + Math.round((potNow + toCall) / 2)], ['קופה', V.curBet + potNow + toCall], ['אול-אין', maxTo]];
+  const clamp = (v: number) => Math.max(minTo, Math.min(maxTo, Math.round(v / V.sb) * V.sb || minTo));
+  const presets: [string, number][] = [['מינ׳', minTo], ['½ קופה', clamp(V.curBet + (potNow + toCall) / 2)], ['¾', clamp(V.curBet + (potNow + toCall) * 0.75)], ['קופה', clamp(V.curBet + potNow + toCall)], ['אול-אין', maxTo]];
+  const mmss = `${String(Math.floor(lvLeft / 60000)).padStart(2, '0')}:${String(Math.floor(lvLeft / 1000) % 60).padStart(2, '0')}`;
+  const hold = { onPointerDown: () => { setPeek(true); sfx.deal(0); }, onPointerUp: () => setPeek(false), onPointerLeave: () => setPeek(false), onPointerCancel: () => setPeek(false), onContextMenu: (e: React.MouseEvent) => e.preventDefault() };
 
   return (
-    <div className="screen full">
-      <div className="play-top">
-        <button className="icon-btn" onClick={leave} aria-label="יציאה">{I.x}</button>
-        <div className="play-title"><b>בליינדים {V.sb}/{V.bb}</b>
-          <span>{V.paused ? 'המשחק בהפסקה' : V.levelEnds ? `עולים בעוד ${Math.floor(lvLeft / 60000)}:${String(Math.floor(lvLeft / 1000) % 60).padStart(2, '0')}` : `יד ${V.handNo}`}</span></div>
-        <span className="chip">{code}</span>
-        {isHost && <button className="icon-btn" onClick={() => setMenu(true)} aria-label="תפריט מנהל">⚙️</button>}
+    <div className="screen full pro">
+      <div className="lounge" aria-hidden><i /><i /><i /><i /><i /></div>
+      <div className="pro-top">
+        <button className="pro-round" onClick={leave} aria-label="יציאה">{I.back}</button>
+        <div className="pro-pill"><span>בליינדים <b className="num">{V.sb}/{V.bb}</b></span>{V.paused ? <em>הפסקה</em> : V.levelEnds ? <em className="num">{mmss}</em> : <em className="num">יד {V.handNo}</em>}</div>
+        <div className="pro-pill code num">{code}</div>
       </div>
-      {!hostHere && !isHost && <div className="glass empty" style={{ padding: 10, margin: '8px 0' }}>המנהל התנתק. המשחק ימשיך כשיחזור.</div>}
+      {!hostHere && !isHost && <div className="pro-note">המנהל התנתק. המשחק ימשיך כשיחזור.</div>}
 
-      <div className="stage ftable">
-        <div className="table"><div className="felt">
-          <div className="felt-logo">POKER IQ</div>
-          <div className="board">{[0, 1, 2, 3, 4].map(i => V.board[i] != null ? <MiniCard key={`${V.handNo}-${i}`} c={V.board[i]} size={38} delay={i < 3 ? i * 0.12 : 0} /> : <div key={i} className="card3d empty" style={{ '--cw': '38px' } as React.CSSProperties}><div className="face" /></div>)}</div>
-          <motion.div className="pot" style={{ x: '-50%', y: '-50%', rotateX: -30 }} key={V.handNo}>
-            <span className="chipstack"><i style={{ top: 10 }} /><i style={{ top: 5 }} /><i style={{ top: 0 }} /></span><span>קופה <b className="num">{fmt(V.pot)}</b></span>
-          </motion.div>
-        </div></div>
+      <div className="ptable">
+        <div className="rail"><div className="pfelt"><div className="pfelt-line" /><div className="pfelt-logo">POKER IQ</div></div></div>
+        <div className="pboard">{[0, 1, 2, 3, 4].map(i => V.board[i] != null ? <MiniCard key={`${V.handNo}-${i}`} c={V.board[i]} size={40} delay={i < 3 ? i * 0.12 : 0} /> : <span key={i} className="pslot" />)}</div>
+        <motion.div className="ppot" key={V.handNo} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+          <Chips amount={V.pot} unit={V.bb} size={18} /><span>קופה</span><b className="num">{fmt(V.pot)}</b>
+        </motion.div>
         {V.players.map((p, i) => {
           const xy = pos(i), isMe = p.id === P.id, turn = V.turn === p.id && V.phase === 'hand';
           const shown = V.shown[p.id], won = V.phase === 'show' && V.winners.find(w => w.id === p.id);
-          const bub = bubbles[p.id];
+          const bub = bubbles[p.id], bp = mid(xy, 0.34), dp = mid(xy, 0.2);
           return (
             <div key={p.id}>
-              <motion.div className={`seat fseat ${p.inHand && !p.folded ? '' : 'folded'} ${isMe ? 'hero' : ''} ${turn ? 'turn' : ''} ${won ? 'won' : ''}`} style={{ left: `${xy.x}%`, top: `${xy.y}%`, x: '-50%', y: '-50%' }} layout>
-                {p.has && !shown && !isMe && <div className="backs"><i /><i /></div>}
-                {shown && !isMe && <div className="shown">{shown.map((c, k) => <MiniCard key={k} c={c} size={26} delay={k * 0.1} />)}</div>}
-                <div className="seat-disc">{p.nick.slice(0, 2)}
-                  {turn && <svg className="ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" pathLength="100" strokeDasharray={`${Math.min(100, (left / V.cfg.turnSec) * 100)} 100`} /></svg>}
+              <div className={`pseat ${p.inHand && !p.folded ? '' : 'dim'} ${isMe ? 'me' : ''} ${turn ? 'turn' : ''} ${won ? 'won' : ''}`} style={{ left: `${xy.x}%`, top: `${xy.y}%` }}>
+                {p.has && !shown && !isMe && <div className="pbacks"><i /><i /></div>}
+                {shown && !isMe && <div className="pshown">{shown.map((c, k) => <MiniCard key={k} c={c} size={28} delay={k * 0.1} />)}</div>}
+                <div className="pavatar" style={{ '--h': `${(p.nick.charCodeAt(0) * 47) % 360}` } as React.CSSProperties}>
+                  <span>{p.nick.slice(0, 2)}</span>
+                  {turn && <svg className="pring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" pathLength="100" strokeDasharray={`${Math.min(100, (left / V.cfg.turnSec) * 100)} 100`} /></svg>}
+                  {turn && <b className="psec num">{Math.ceil(left)}</b>}
                 </div>
-                <span className="seat-name">{isMe ? 'אתה' : p.nick}{p.away ? ' 💤' : ''}</span>
-                <span className={`seat-tag ${won ? 'hot' : ''}`}>{won ? `+${fmt(won.amount)}` : p.out ? 'בחוץ' : p.allIn && p.inHand ? 'אול-אין' : fmt(p.stack)}</span>
-                {V.last?.id === p.id && V.phase === 'hand' && <motion.span key={V.last.text + V.pot} className="said" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>{V.last.text}</motion.span>}
-                <AnimatePresence>{bub && now - bub.k < 2500 && <motion.span key={bub.k} className="bubble" initial={{ scale: 0, y: 0 }} animate={{ scale: 1.2, y: -26 }} exit={{ opacity: 0 }}>{bub.e}</motion.span>}</AnimatePresence>
-              </motion.div>
-              {p.bet > 0 && <motion.div className="seat betchip" style={{ x: '-50%', y: '-50%' }} initial={{ left: `${xy.x}%`, top: `${xy.y}%`, opacity: 0 }} animate={{ left: `${mid(xy, 0.42).x}%`, top: `${mid(xy, 0.42).y}%`, opacity: 1 }}>
-                <span className="chipstack"><i style={{ top: 5 }} /><i style={{ top: 0 }} /></span><b className="num">{fmt(p.bet)}</b></motion.div>}
-              {i === V.btn && <div className="dealer" style={{ left: `${mid(xy, 0.24).x + 6}%`, top: `${mid(xy, 0.24).y}%`, transform: 'translate(-50%,-50%)' }}>D</div>}
+                <div className="pplate"><span className="pname">{isMe ? 'אני' : p.nick}{p.away ? ' ·' : ''}</span>
+                  <span className="pstack num">{won ? `+${fmt(won.amount)}` : p.out ? 'בחוץ' : p.allIn && p.inHand ? 'אול-אין' : fmt(p.stack)}</span></div>
+                {V.last?.id === p.id && V.phase === 'hand' && <motion.span key={V.last.text + V.pot} className="psaid" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>{V.last.text}</motion.span>}
+                <AnimatePresence>{bub && now - bub.k < 2500 && <motion.span key={bub.k} className="bubble" initial={{ scale: 0, y: 0 }} animate={{ scale: 1.2, y: -30 }} exit={{ opacity: 0 }}>{bub.e}</motion.span>}</AnimatePresence>
+              </div>
+              {p.bet > 0 && <motion.div className="pbet" initial={{ left: `${xy.x}%`, top: `${xy.y}%`, opacity: 0 }} animate={{ left: `${bp.x}%`, top: `${bp.y}%`, opacity: 1 }} transition={{ type: 'spring', stiffness: 200, damping: 22 }}>
+                <Chips amount={p.bet} unit={V.bb} size={16} /><b className="num">{fmt(p.bet)}</b></motion.div>}
+              {i === V.btn && <div className="pdealer" style={{ left: `${dp.x + (xy.x < 50 ? 7 : -7)}%`, top: `${dp.y}%` }}>D</div>}
             </div>
           );
         })}
-      </div>
-
-      <AnimatePresence>
+        <AnimatePresence>
         {V.phase === 'show' && V.winners[0] && (
-          <motion.div className="glass winbar" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-            🏆 {V.winners.map(w => `${V.players.find(p => p.id === w.id)?.nick} זכה ב-${fmt(w.amount)}${w.name ? ` עם ${w.name}` : ''}`).join(' · ')}
+          <motion.div className="pwin" initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+            {V.winners.map(w => `${V.players.find(p => p.id === w.id)?.nick} זכה ב-${fmt(w.amount)}${w.name ? ` עם ${w.name}` : ''}`).join(' · ')}
           </motion.div>
         )}
       </AnimatePresence>
-
-      <div className="hero-zone" style={{ marginTop: 6 }}>
-        {myCards ? (
-          <button className="hero-cards peekable" onClick={() => { setPeek(x => !x); sfx.deal(0); }} aria-label={peek ? 'הסתר קלפים' : 'הצץ בקלפים'}>
-            {myCards.map((c, k) => <MiniCard key={`${V.handNo}-${k}`} c={c} size={74} down={!peek && V.phase === 'hand'} delay={0.15 + k * 0.12} />)}
-          </button>
-        ) : <div className="muted" style={{ fontSize: 14 }}>{me?.out ? 'יצאת מהמשחק' : me && me.stack === 0 ? 'נגמרו לך הז׳יטונים' : 'תצטרף ביד הבאה'}</div>}
-        <div className="hero-meta">
-          {myCards && <span className="chip big gold">{peek || V.phase !== 'hand' ? hand || madeHand(myCards, V.board).name : 'לחץ על הקלפים כדי להציץ'}</span>}
-          {me && <span className="chip">הערימה שלך: <b className="num">{fmt(me.stack)}</b></span>}
-          {me && canRebuy(V as unknown as TS, me as any) && <button className="btn gold" style={{ minHeight: 40 }} onClick={doRebuy}>ריביי ({fmt(V.cfg.stack)})</button>}
-        </div>
+        {myCards && (
+          <div className={`phero ${showMine ? 'up' : ''}`} {...(V.phase === 'hand' ? hold : {})} role="button" tabIndex={0} aria-label="החזק כדי להציץ בקלפים"
+            onKeyDown={e => { if (e.key === ' ') setPeek(true); }} onKeyUp={() => setPeek(false)}>
+            {V.phase === 'hand' && !peek && <span className="phint">החזק להצצה</span>}
+            <div className="phero-cards">{myCards.map((c, k) => <MiniCard key={`${V.handNo}-${k}`} c={c} size={66} down={!showMine} delay={0.15 + k * 0.12} />)}</div>
+            {showMine && <span className="phand">{madeHand(myCards, V.board).name}</span>}
+          </div>
+        )}
       </div>
 
-      {myTurn && me ? (
-        raiseTo == null ? (
-          <div className="actions">
-            <motion.button className="act fold" whileTap={{ scale: 0.93 }} onClick={() => doAct({ type: 'fold' })}>פולד<small>לוותר</small></motion.button>
-            {toCall <= 0
-              ? <motion.button className="act" whileTap={{ scale: 0.93 }} onClick={() => doAct({ type: 'check' })}>צ׳ק<small>בלי לשים</small></motion.button>
-              : <motion.button className="act" whileTap={{ scale: 0.93 }} onClick={() => doAct({ type: 'call' })}>{toCall >= me.stack ? 'אול-אין' : 'קול'}<small className="num">{fmt(Math.min(toCall, me.stack))}</small></motion.button>}
-            {maxTo > V.curBet && <motion.button className="act raise" whileTap={{ scale: 0.93 }} onClick={() => setRaiseTo(minTo)}>{V.curBet ? 'רייז' : 'הימור'}<small>לבחור סכום</small></motion.button>}
-          </div>
-        ) : (
-          <div className="glass raisebox">
-            <div className="opt-row">{presets.map(([t, v]) => <button key={t} className="chip" onClick={() => setRaiseTo(Math.max(minTo, Math.min(maxTo, v)))}>{t}</button>)}</div>
-            <input type="range" min={minTo} max={maxTo} step={Math.max(1, V.sb)} value={raiseTo} onChange={e => setRaiseTo(Math.min(maxTo, Math.max(minTo, +e.target.value)))} aria-label="סכום ההעלאה" />
-            <div className="actions">
-              <button className="act" onClick={() => setRaiseTo(null)}>ביטול</button>
-              <button className="act raise" onClick={() => doAct({ type: 'raise', to: raiseTo })}>{raiseTo >= maxTo ? 'אול-אין' : V.curBet ? 'העלה ל' : 'המר'}<small className="num">{fmt(raiseTo)}</small></button>
+      <div className="pdock">
+        {!myCards && <div className="pro-note">{me?.out ? 'יצאת מהמשחק' : me && me.stack === 0 ? 'נגמרו לך הז׳יטונים' : 'תצטרף ביד הבאה'}</div>}
+        {me && canRebuy(V as unknown as TS, me as any) && <button className="pbtn go" onClick={doRebuy}>ריביי · {fmt(V.cfg.stack)}</button>}
+        {myTurn && me ? (
+          raiseTo == null ? (
+            <div className="pactions">
+              <button className="pbtn" onClick={() => doAct({ type: 'fold' })}>פולד</button>
+              {toCall <= 0
+                ? <button className="pbtn" onClick={() => doAct({ type: 'check' })}>צ׳ק</button>
+                : <button className="pbtn" onClick={() => doAct({ type: 'call' })}>{toCall >= me.stack ? 'אול-אין' : 'קול'}<small className="num">{fmt(Math.min(toCall, me.stack))}</small></button>}
+              {maxTo > V.curBet && <button className="pbtn go" onClick={() => setRaiseTo(minTo)}><span className="pbubble num">{fmt(minTo)}</span>{V.curBet ? 'רייז' : 'הימור'}</button>}
             </div>
+          ) : (
+            <motion.div className="praise" initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+              <div className="praise-amt"><span>{raiseTo >= maxTo ? 'אול-אין' : V.curBet ? 'רייז ל' : 'הימור'}</span><b className="num">{fmt(raiseTo)}</b></div>
+              <Dial min={minTo} max={maxTo} unit={V.sb} value={raiseTo} onChange={setRaiseTo} />
+              <div className="ppresets">{presets.map(([t, v]) => <button key={t} className={v === raiseTo ? 'on' : ''} onClick={() => setRaiseTo(v)}>{t}</button>)}</div>
+              <div className="pactions two">
+                <button className="pbtn" onClick={() => setRaiseTo(null)}>ביטול</button>
+                <button className="pbtn go" onClick={() => doAct({ type: 'raise', to: raiseTo })}>אישור</button>
+              </div>
+            </motion.div>
+          )
+        ) : (
+          <div className="pwait">
+            <div className="ptools">
+              {isHost && <button className="pro-round" onClick={() => setMenu(true)} aria-label="ניהול השולחן"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg></button>}
+              <button className="pro-round" onClick={() => setTray(t => !t)} aria-label="תגובות"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg></button>
+              {tray && <div className="ptray">{EMOJIS.map(e => <button key={e} onClick={() => { emoji(e); setTray(false); }} aria-label={`שלח ${e}`}>{e}</button>)}</div>}
+            </div>
+            <span className="pstatus">{V.paused ? 'המנהל עצר את המשחק' : V.phase === 'show' ? 'היד הבאה מיד' : turnP ? `התור של ${turnP.nick}` : 'מחלקים קלפים'}</span>
           </div>
-        )
-      ) : (
-        <div className="glass waitbar">
-          <span>{V.paused ? 'המנהל עצר את המשחק' : V.phase === 'show' ? 'היד הבאה מיד…' : turnP ? `התור של ${turnP.id === P.id ? 'אתה' : turnP.nick} · ${Math.ceil(left)} שנ׳` : 'מחלקים…'}</span>
-          <span className="emojis">{EMOJIS.map(e => <button key={e} onClick={() => emoji(e)} aria-label={`שלח ${e}`}>{e}</button>)}</span>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* manager menu */}
       <AnimatePresence>
         {menu && isHost && (
           <>
             <motion.div className="scrim" onClick={() => setMenu(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
-            <motion.div className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 30 }}>
+            <motion.div className="sheet psheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 30 }}>
               <div className="grab" />
               <h3 className="h-md" style={{ marginBottom: 10 }}>ניהול השולחן</h3>
-              <button className="btn wide" style={{ marginBottom: 10 }} onClick={() => {
+              <button className="pbtn" style={{ width: '100%', marginBottom: 10 }} onClick={() => {
                 const s = S.current!, t = Date.now();
                 if (!s.paused) { s.paused = true; pausedAt.current = t; }
                 else { s.paused = false; const d = t - pausedAt.current; if (s.startedAt) s.startedAt += d; s.deadline = t + s.cfg.turnSec * 1000; if (s.phase === 'show') s.nextAt = t + 1500; }
                 commit();
-              }}>{V.paused ? '▶️ המשך משחק' : '⏸️ הפסקה'}</button>
+              }}>{V.paused ? 'המשך משחק' : 'הפסקה'}</button>
               <div className="field"><label htmlFor="gamt">כמה ז׳יטונים לתת</label><input id="gamt" className="input" inputMode="numeric" value={giftAmt} onChange={e => setGiftAmt(e.target.value.replace(/\D/g, ''))} placeholder={String(V.cfg.stack)} /></div>
               <div className="rows" style={{ marginBottom: 12 }}>
                 {V.players.map(p => (
                   <div key={p.id} className="glass row" style={{ gridTemplateColumns: '1fr auto auto' }}>
                     <div className="who"><b>{p.nick}</b><span>{fmt(p.stack)}{p.pending ? ` (+${fmt(p.pending)} אחרי היד)` : ''} · {p.buyIns} קניות</span></div>
-                    <button className="btn gold" style={{ minHeight: 38, padding: '0 12px' }} onClick={() => { if (gift(S.current!, p.id, Number(giftAmt) || V.cfg.stack)) { commit(); toast(`${p.nick} קיבל ${fmt(Number(giftAmt) || V.cfg.stack)}`); } }}>תן</button>
-                    {p.id !== P.id && <button className="btn" style={{ minHeight: 38, padding: '0 12px' }} onClick={() => { const s = S.current!, x = s.players.find(q => q.id === p.id)!; x.out = !x.out; if (x.out && s.turn === x.id) act(s, x.id, { type: 'fold' }, Date.now()); commit(); }}>{p.out ? 'החזר' : 'הוצא'}</button>}
+                    <button className="pbtn go sm" onClick={() => { if (gift(S.current!, p.id, Number(giftAmt) || V.cfg.stack)) { commit(); toast(`${p.nick} קיבל ${fmt(Number(giftAmt) || V.cfg.stack)}`); } }}>תן</button>
+                    {p.id !== P.id && <button className="pbtn sm" onClick={() => { const s = S.current!, x = s.players.find(q => q.id === p.id)!; x.out = !x.out; if (x.out && s.turn === x.id) act(s, x.id, { type: 'fold' }, Date.now()); commit(); }}>{p.out ? 'החזר' : 'הוצא'}</button>}
                   </div>
                 ))}
               </div>
-              <button className="btn wide" style={{ color: 'var(--bad)' }} onClick={() => { const s = S.current!; if (s.phase !== 'hand') { s.phase = 'over'; commit(); setMenu(false); } else toast('אפשר לסיים בין ידיים. עצור את המשחק או חכה לסוף היד.'); }}>סיים משחק והצג תוצאות</button>
+              <button className="pbtn" style={{ width: '100%', color: 'var(--bad)' }} onClick={() => { const s = S.current!; if (s.phase !== 'hand') { s.phase = 'over'; commit(); setMenu(false); } else toast('אפשר לסיים בין ידיים. עצור את המשחק או חכה לסוף היד.'); }}>סיים משחק והצג תוצאות</button>
             </motion.div>
           </>
         )}
       </AnimatePresence>
-      <Burst fire={burst} />
+      <Burst fire={burst} colors={['#e9c46a', '#fff1c1', '#c9a227']} />
     </div>
   );
 }

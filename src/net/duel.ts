@@ -19,10 +19,10 @@ export const DUEL_SECONDS = 20;
 export class DuelRoom {
   ch: RealtimeChannel | null = null;
   peers: Peer[] = [];
-  constructor(public code: string, public me: Peer, private onPeers: (p: Peer[]) => void, private onMsg: (m: DuelMsg) => void, private onStatus: (s: string) => void) {}
+  constructor(public channel: string, public me: Peer, private onPeers: (p: Peer[]) => void, private onMsg: (m: DuelMsg) => void, private onStatus: (s: string) => void) {}
 
   join() {
-    const ch = supabase.channel(`pokeriq-duel-${this.code}`, { config: { presence: { key: this.me.id }, broadcast: { self: false } } });
+    const ch = supabase.channel(`pokeriq-duel-${this.channel}`, { config: { presence: { key: this.me.id }, broadcast: { self: false } } });
     ch.on('presence', { event: 'sync' }, () => {
       const st = ch.presenceState<Peer>();
       this.peers = Object.values(st).map(list => list[0]).filter(Boolean)

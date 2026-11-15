@@ -5,10 +5,28 @@ import { leaderboard, type Row } from '../net/supabase';
 import { useApp } from '../ui/ctx';
 import { I } from '../ui/Icons';
 
+const MIN_PUBLIC = 20;
+
 export function Rows({ rows, err, meId, val, sub, empty }: { rows: Row[] | null; err: boolean; meId: string; val: (r: Row) => number; sub: (r: Row) => string; empty: string }) {
   if (err) return <div className="glass empty">אין חיבור לדירוג כרגע. בדוק שיש אינטרנט ונסה שוב.</div>;
   if (!rows) return <div className="glass empty">טוען…</div>;
   if (!rows.length) return <div className="glass empty">{empty}</div>;
+  // Until enough people play, the public list stays closed and each player sees only their own line.
+  if (rows.length < MIN_PUBLIC) {
+    const mine = rows.find(r => r.id === meId);
+    return (
+      <div className="rows">
+        {mine && (
+          <div className="glass row me" style={{ gridTemplateColumns: '38px 1fr auto' }}>
+            <div className="avatar sm">{mine.nickname.slice(0, 1)}</div>
+            <div className="who"><b>{mine.nickname} (אתה)</b><span>{sub(mine)}</span></div>
+            <span className="val num">{val(mine).toLocaleString('he-IL')}</span>
+          </div>
+        )}
+        <div className="glass empty">הדירוג המלא נפתח בקרוב. בינתיים, אתגר חבר לראש בראש או פתח שולחן.</div>
+      </div>
+    );
+  }
   return (
     <div className="rows">
       {rows.map((r, k) => (

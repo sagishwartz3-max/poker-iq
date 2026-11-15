@@ -5,8 +5,8 @@ import { ACT_NAME, grade, makeScenario, type Action, type Scenario } from '../en
 import { recordSkill, rememberMistake } from '../game/progress';
 import { sfx } from '../game/sound';
 import { DUEL_CFG } from '../game/worlds';
-import { DUEL_HANDS, DUEL_SECONDS, DuelRoom, newCode, seated, type DuelMsg, type Peer } from '../net/duel';
-import { PUBLIC_URL, recordMatch, track } from '../net/supabase';
+import { DUEL_HANDS, DUEL_SECONDS, DuelRoom, seated, type DuelMsg, type Peer } from '../net/duel';
+import { createRoom, getRoom, PUBLIC_URL, recordMatch, track } from '../net/supabase';
 import { Burst } from '../ui/Burst';
 import { useApp } from '../ui/ctx';
 import { Feedback } from '../ui/Feedback';
@@ -64,15 +64,24 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const enter = (c: string, asHost: boolean) => {
+  const [busy, setBusy] = useState(false);
+  const enter = async (c: string | null) => {
+    if (busy) return;
+    setBusy(true);
+    let rm;
+    try { rm = c ? await getRoom(c, 'duel') : await createRoom(P, 'duel'); }
+    catch { setBusy(false); toast('אין חיבור לשרת. בדוק שיש אינטרנט ונסה שוב.'); return; }
+    setBusy(false);
+    if (!rm) { toast('אין חדר עם הקוד הזה. בדוק את הקוד או בקש קישור חדש.'); return; }
+    const asHost = rm.hostId === P.id;
     room.current?.leave();
-    setCode(c); setHost(asHost); setPeers([]); setView('room');
-    oppId.current = null; joinedAt.current = Date.now();
-    const r = new DuelRoom(c, { id: P.id, nick: P.nick || 'שחקן', host: asHost, at: joinedAt.current }, setPeers, onMsg, setStatus);
+    setCode(rm.code); setHost(asHost); setPeers([]); setView('room');
+    oppId.current = null; joinedAt.current = asHost ? 0 : Date.now();
+    const r = new DuelRoom(rm.channel, { id: P.id, nick: P.nick || 'שחקן', host: asHost, at: joinedAt.current }, setPeers, onMsg, setStatus);
     r.join(); room.current = r;
   };
 
-  useEffect(() => { if (initialCode && initialCode.length === 5) enter(initialCode.toUpperCase(), false); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { if (initialCode && initialCode.length === 5) enter(initialCode.toUpperCase()); /* eslint-disable-next-line */ }, []);
 
   // the room already has two players: step out so their match is not disturbed
   useEffect(() => {
@@ -171,7 +180,7 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
       <motion.div className="glass" style={{ padding: 18, marginBottom: 14, borderRadius: 24 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         <h3 className="h-md">פתח חדר חדש</h3>
         <p className="muted" style={{ margin: '4px 0 14px', fontSize: 14 }}>תקבל קישור לשלוח לחבר בוואטסאפ. הוא נכנס ישר מהדפדפן, בלי להתקין כלום.</p>
-        <button className="btn violet wide" onClick={() => enter(newCode(), true)}>{I.swords} צור חדר</button>
+        <button className="btn violet wide" disabled={busy} onClick={() => enter(null)}>{I.swords} צור חדר</button>
       </motion.div>
       <motion.div className="glass" style={{ padding: 18, borderRadius: 24 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
         <h3 className="h-md">יש לך קוד?</h3>
@@ -179,7 +188,7 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
           <label htmlFor="joinCode">קוד חדר (5 תווים)</label>
           <input id="joinCode" className="input code-input" maxLength={5} value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="ABCDE" autoComplete="off" />
         </div>
-        <button className="btn gold wide" disabled={joinCode.length !== 5} onClick={() => enter(joinCode, false)}>הצטרף</button>
+        <button className="btn gold wide" disabled={joinCode.length !== 5 || busy} onClick={() => enter(joinCode)}>הצטרף</button>
       </motion.div>
     </div>
   );

@@ -68,3 +68,19 @@ export async function askCoach(p: Progress, spot: string, question: string): Pro
   try { code = (await (error as any)?.context?.json?.())?.error || ''; } catch { /* no body */ }
   return { ok: false, reason: code === 'not_configured' ? 'not_configured' : code === 'limit' ? 'limit' : 'error' };
 }
+
+/* ---------- rooms: a code works only if a player really opened it ---------- */
+export interface Room { code: string; channel: string; hostId: string }
+export async function createRoom(p: Progress, kind: 'duel' | 'table'): Promise<Room> {
+  await savePlayer(p);
+  const { data, error } = await supabase.rpc('poker_room_create', { p_id: p.id, p_secret: p.secret, p_kind: kind });
+  const row = Array.isArray(data) ? data[0] : data;
+  if (error || !row) throw error || new Error('no room');
+  return { code: row.code, channel: row.channel, hostId: p.id };
+}
+export async function getRoom(code: string, kind: 'duel' | 'table'): Promise<Room | null> {
+  const { data, error } = await supabase.rpc('poker_room_get', { p_code: code, p_kind: kind });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ? { code: code.toUpperCase(), channel: row.channel, hostId: row.host_id } : null;
+}
