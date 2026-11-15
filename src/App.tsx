@@ -7,6 +7,7 @@ import { savePlayer, track } from './net/supabase';
 import { Board } from './screens/Board';
 import { Daily } from './screens/Daily';
 import { Duel } from './screens/Duel';
+import { Friends } from './screens/Friends';
 import { Home } from './screens/Home';
 import { Learn } from './screens/Learn';
 import { Onboarding } from './screens/Onboarding';
@@ -19,18 +20,19 @@ import { I } from './ui/Icons';
 
 const TABS: { s: Screen; t: string; icon: JSX.Element }[] = [
   { s: 'home', t: 'מסע', icon: I.map },
-  { s: 'duel', t: 'ראש בראש', icon: I.swords },
+  { s: 'duel', t: 'חברים', icon: I.swords },
   { s: 'board', t: 'דירוג', icon: I.trophy },
   { s: 'learn', t: 'מילון', icon: I.book },
   { s: 'profile', t: 'פרופיל', icon: I.user }
 ];
 
 const urlDuel = new URLSearchParams(location.search).get('duel')?.toUpperCase().slice(0, 5) || '';
+const urlTable = new URLSearchParams(location.search).get('table')?.toUpperCase().slice(0, 5) || '';
 
 export default function App() {
   const [P, setP] = useState<Progress>(load);
   const pRef = useRef(P); pRef.current = P;
-  const [screen, setScreen] = useState<Screen>(urlDuel ? 'duel' : 'home');
+  const [screen, setScreen] = useState<Screen>(urlTable ? 'table' : urlDuel ? 'duel' : 'home');
   const [play, setPlay] = useState<PlayArgs>({ mode: 'free' });
   const [playKey, setPlayKey] = useState(0);
   const [term, setTerm] = useState<string | null>(null);
@@ -40,8 +42,8 @@ export default function App() {
   const syncT = useRef<number>();
 
   useEffect(() => { setSound(P.sound); }, [P.sound]);
-  useEffect(() => { if (urlDuel) history.replaceState(null, '', location.pathname); }, []);
-  useEffect(() => { if (P.onboarded) track(P, 'app_open', { via: urlDuel ? 'duel_link' : 'direct', hands: P.hands, xp: P.xp }); }, [P.onboarded]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (urlDuel || urlTable) history.replaceState(null, '', location.pathname); }, []);
+  useEffect(() => { if (P.onboarded) track(P, 'app_open', { via: urlTable ? 'table_link' : urlDuel ? 'duel_link' : 'direct', hands: P.hands, xp: P.xp }); }, [P.onboarded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = useCallback((fn: (p: Progress) => void) => {
     setP(prev => { const next: Progress = JSON.parse(JSON.stringify(prev)); fn(next); persist(next); return next; });
@@ -54,7 +56,7 @@ export default function App() {
   const go = useCallback((s: Screen, args?: PlayArgs) => { if (args) { setPlay(args); setPlayKey(k => k + 1); } setScreen(s); }, []);
   const ctx: AppCtx = useMemo(() => ({ P, update, term: setTerm, toast, go, sync }), [P, update, toast, go, sync]);
 
-  const showTabs = P.onboarded && screen !== 'play' && screen !== 'daily' && screen !== 'pro' && !duelLive;
+  const showTabs = P.onboarded && screen !== 'play' && screen !== 'daily' && screen !== 'pro' && screen !== 'table' && !duelLive;
   const t = term ? GLOSSARY[term] : null;
 
   return (
@@ -69,6 +71,7 @@ export default function App() {
               : screen === 'play' ? <Play args={play} />
               : screen === 'daily' ? <Daily />
               : screen === 'duel' ? <Duel initialCode={urlDuel} onPlaying={setDuelLive} />
+              : screen === 'table' ? <Friends initialCode={urlTable} onPlaying={setDuelLive} />
               : screen === 'board' ? <Board />
               : screen === 'learn' ? <Learn />
               : screen === 'pro' ? <Pro />

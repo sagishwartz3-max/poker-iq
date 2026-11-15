@@ -297,6 +297,27 @@ h1, h2, h3 { margin: 0; font-weight: 800; letter-spacing: -0.01em; text-wrap: ba
 .leak .bar i { display: block; height: 100%; border-radius: 7px; }
 .leak .acc { font-weight: 900; font-size: 15px; }
 .leak .btn { min-height: 36px; padding: 0 14px; font-size: 13px; }
+.tablecta { width: 100%; min-height: 150px; margin-top: 8px; background: radial-gradient(120% 120% at 0% 0%, rgba(27,138,99,.55), transparent 60%), linear-gradient(160deg, rgba(255,255,255,.1), rgba(255,255,255,.02)); }
+.opt-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.opt-row .chip { cursor: pointer; min-height: 34px; }
+.ftable { height: 350px; margin-top: 10px; }
+.fseat .seat-disc { position: relative; width: 42px; height: 42px; font-size: 12px; }
+.fseat .seat-name { font-size: 11px; font-weight: 600; max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px #000; }
+.fseat.turn .seat-disc { box-shadow: 0 0 0 3px rgba(62,232,166,.35), 0 0 22px rgba(62,232,166,.7); }
+.fseat.won .seat-disc { box-shadow: 0 0 0 3px rgba(246,199,90,.5), 0 0 26px rgba(246,199,90,.9); }
+.ring { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); transform: rotate(-90deg); pointer-events: none; }
+.ring circle { fill: none; stroke: var(--good); stroke-width: 3; stroke-linecap: round; transition: stroke-dasharray .25s linear; }
+.fseat .shown { position: absolute; top: -30px; display: flex; gap: 2px; direction: ltr; z-index: 5; }
+.said { position: absolute; top: -18px; font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: 10px; background: #fff; color: #111; white-space: nowrap; z-index: 6; }
+.bubble { position: absolute; top: 0; font-size: 26px; z-index: 7; pointer-events: none; }
+.betchip { flex-direction: row; gap: 4px; z-index: 2; font-size: 12px; background: rgba(0,0,0,.5); padding: 1px 7px 1px 4px; border-radius: 12px; direction: ltr; }
+.winbar { position: relative; z-index: 8; text-align: center; padding: 10px 14px; border-radius: 18px; font-weight: 700; margin: 4px 0; border-color: rgba(246,199,90,.5); background: linear-gradient(135deg, rgba(246,199,90,.22), rgba(255,255,255,.04)); }
+.peekable { cursor: pointer; padding: 0; }
+.raisebox { padding: 12px; border-radius: 20px; display: flex; flex-direction: column; gap: 10px; }
+.raisebox input[type=range] { width: 100%; accent-color: var(--gold-2); height: 30px; }
+.waitbar { padding: 10px 14px; border-radius: 18px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; min-height: 58px; }
+.emojis { display: flex; gap: 2px; direction: ltr; }
+.emojis button { font-size: 20px; width: 32px; height: 36px; }
 .bottom-line { margin: -4px 0 14px; font-size: 17px; font-weight: 700; line-height: 1.5; color: var(--text); }
 .box.rule { background: linear-gradient(135deg, rgba(246,199,90,.12), rgba(246,199,90,.03)); border-color: rgba(246,199,90,.35); }
 .box.rule .box-t { color: var(--gold-2); }

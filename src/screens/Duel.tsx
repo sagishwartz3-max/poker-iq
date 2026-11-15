@@ -159,8 +159,14 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
 
   if (view === 'lobby') return (
     <div className="screen">
-      <div className="eyebrow">משחק חי</div>
-      <h1 className="h-xl" style={{ margin: '4px 0 6px' }}>ראש בראש</h1>
+      <div className="eyebrow">משחקים עם חברים</div>
+      <motion.button className="glass cta tablecta" onClick={() => go('table')} whileTap={{ scale: 0.98 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+        <span className="cta-art">🎰</span>
+        <span className="badge live">חדש</span>
+        <span className="cta-t">שולחן פוקר לחברים</span>
+        <span className="cta-s">טקסס הולדם אמיתי עד 9 שחקנים: דילר, בליינדים עולים, ריביי ומנהל שולחן</span>
+      </motion.button>
+      <h1 className="h-lg" style={{ margin: '22px 0 6px' }}>ראש בראש</h1>
       <p className="muted" style={{ marginTop: 0 }}>אתה וחבר מקבלים בדיוק את אותן {DUEL_HANDS} ידיים, באותו זמן. מי שמקבל יותר החלטות נכונות, ומהר יותר, מנצח.</p>
       <motion.div className="glass" style={{ padding: 18, marginBottom: 14, borderRadius: 24 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         <h3 className="h-md">פתח חדר חדש</h3>

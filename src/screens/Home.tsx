@@ -45,8 +45,8 @@ export function Home() {
         </motion.button>
         <motion.button className="glass cta duel" onClick={() => go('duel')} whileTap={{ scale: 0.97 }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
           <span className="cta-art">⚔️</span>
-          <span className="cta-t">ראש בראש</span>
-          <span className="cta-s">קרב חי מול חבר</span>
+          <span className="cta-t">חברים</span>
+          <span className="cta-s">שולחן פוקר וקרב ראש בראש</span>
         </motion.button>
         <motion.button className="glass cta free" onClick={() => go('play', { mode: 'free' })} whileTap={{ scale: 0.97 }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
           <span className="cta-art">♾️</span>
