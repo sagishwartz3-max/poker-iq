@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useMemo } from 'react';
-import { ACT_NAME, explain, POS_NAME, type Action, type Scenario } from '../engine/scenarios';
+import { btnLabel, explain, POS_NAME, type Action, type Scenario } from '../engine/scenarios';
 import { sfx } from '../game/sound';
 import { Card } from './Card';
 import { useApp } from './ctx';
@@ -39,8 +39,8 @@ export function Spot({ s, k, onAct, picked, locked }: { s: Scenario; k: string; 
         {s.buttons.map(b => (
           <motion.button key={k + b.action} className={`act ${b.action} ${picked === b.action ? 'picked' : ''}`} disabled={locked}
             whileTap={{ scale: 0.93 }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 22, delay: 0.35 }}
-            onClick={() => { sfx.tap(); onAct(b.action); }} aria-label={`${ACT_NAME[b.action]} ${b.sub}`}>
-            {b.label}<small>{b.sub}</small>
+            onClick={() => { sfx.tap(); onAct(b.action); }} aria-label={`${btnLabel(b.label)} ${b.sub}`}>
+            {btnLabel(b.label)}<small>{b.sub}</small>
           </motion.button>
         ))}
       </div>

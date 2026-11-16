@@ -57,7 +57,9 @@ export function Play({ args }: { args: PlayArgs }) {
     sc.board.forEach((_, k) => sfx.deal(k));
   }, [cfg, i, args.mode, keep]);
 
-  useEffect(() => { if (phase === 'decide' && !s) deal(); }, [phase, s, deal]);
+  const dailyUsed = useRef(args.mode === 'daily' && P.daily?.date === today());
+  useEffect(() => { if (dailyUsed.current) go('daily'); }, [go]);
+  useEffect(() => { if (phase === 'decide' && !s && !dailyUsed.current) deal(); }, [phase, s, deal]);
 
   const answer = useCallback((a: Action | 'timeout') => {
     if (!s || last) return;
@@ -73,11 +75,17 @@ export function Play({ args }: { args: PlayArgs }) {
       recordSkill(p, s, g === 'g' ? 100 : g === 'c' ? 70 : 0);
       if (g === 'b') rememberMistake(p, s);
       else if (args.mode === 'review') promoteMistake(p, s);
+      if (args.mode === 'daily') {
+        if (p.lastDaily !== today()) { p.dailyStreak = p.lastDaily === yesterday() ? p.dailyStreak + 1 : 1; p.lastDaily = today(); }
+        const marks = [...res]; marks[i] = g;
+        p.daily = { date: today(), score: points + pts, squares: marks.map(x => (x === 'g' ? '🟩' : x === 'c' ? '🟨' : '🟥')).join('') };
+      }
     });
+    if (args.mode === 'daily') sync();
     setStreak(x => (g === 'g' ? x + 1 : 0));
     if (g === 'g') { sfx.good(); setBurst(b => b + 1); } else if (g === 'c') sfx.close(); else sfx.bad();
     setPhase('feedback');
-  }, [s, last, i, args.mode, update]);
+  }, [s, last, i, args.mode, update, res, points, sync]);
 
   // per-hand clock for timed stages
   useEffect(() => {
@@ -93,8 +101,6 @@ export function Play({ args }: { args: PlayArgs }) {
       const squares = res.map(x => (x === 'g' ? '🟩' : x === 'c' ? '🟨' : '🟥')).join('');
       update(p => {
         p.daily = { date: today(), score: sum, squares };
-        p.dailyStreak = p.lastDaily === yesterday() ? p.dailyStreak + 1 : 1;
-        p.lastDaily = today();
         p.xp += Math.round(sum * 0.5);
       });
       sync(); toast(`+${Math.round(sum * 0.5)} XP`); go('daily'); return;
@@ -125,6 +131,7 @@ export function Play({ args }: { args: PlayArgs }) {
   };
 
   const quit = () => {
+    if (args.mode === 'daily' && res.length) { finish(); return; } // the attempt is used: bank what was played
     if (endless && points) { const xp = Math.round(points * 0.3); update(p => { p.xp += xp; }); sync(); toast(`+${xp} XP מאימון חופשי`); }
     go(args.mode === 'daily' ? 'daily' : 'home');
   };

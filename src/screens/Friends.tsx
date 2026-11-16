@@ -52,6 +52,8 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const [raiseTo, setRaiseTo] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
   const [tray, setTray] = useState(false);
+  const [peekOff, setPeekOff] = useState(() => { try { return localStorage.getItem('pokeriq-peek-off') === '1'; } catch { return false; } });
+  const togglePeek = () => setPeekOff(v => { try { localStorage.setItem('pokeriq-peek-off', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
   const [tall, setTall] = useState(() => typeof window !== 'undefined' && innerHeight > innerWidth * 1.15);
   const [giftAmt, setGiftAmt] = useState('');
   const [now, setNow] = useState(Date.now());
@@ -302,7 +304,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const lastActor = V.last ? V.players.findIndex(p => p.id === V.last!.id) : -1;
   const potNow = V.pot;
   const clamp = (v: number) => Math.max(minTo, Math.min(maxTo, Math.round(v / V.sb) * V.sb || minTo));
-  const presets: [string, number][] = [['מינ׳', minTo], ['½ קופה', clamp(V.curBet + (potNow + toCall) / 2)], ['¾', clamp(V.curBet + (potNow + toCall) * 0.75)], ['קופה', clamp(V.curBet + potNow + toCall)], ['אול-אין', maxTo]];
+  const presets: [string, number][] = [['Min', minTo], ['½ Pot', clamp(V.curBet + (potNow + toCall) / 2)], ['¾', clamp(V.curBet + (potNow + toCall) * 0.75)], ['Pot', clamp(V.curBet + potNow + toCall)], ['All-in', maxTo]];
   const mmss = `${String(Math.floor(lvLeft / 60000)).padStart(2, '0')}:${String(Math.floor(lvLeft / 1000) % 60).padStart(2, '0')}`;
 
   return (
@@ -324,7 +326,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           <Chips amount={V.pot} unit={V.bb} size={38} /><span>קופה</span><b className="num">{fmt(V.pot)}</b>
         </motion.div>
         <div className="room-center-chips"><Chips amount={V.pot} unit={V.bb} size={50} /></div>
-        {lastActor >= 0 && V.phase === 'hand' && V.last && !['צ׳ק', 'פולד'].includes(V.last.text) && (
+        {lastActor >= 0 && V.phase === 'hand' && V.last && !['Check', 'Fold', 'צ׳ק', 'פולד'].includes(V.last.text) && (
           <motion.div key={`${V.handNo}-${V.pot}-${V.last.id}`} className="chip-flight"
             initial={{ left: `${pos(lastActor).x}%`, top: `${pos(lastActor).y}%`, opacity: 1, scale: .8 }}
             animate={{ left: potAt.x, top: potAt.y, opacity: [1, 1, 0], scale: 1 }} transition={{ duration: .65, ease: 'easeOut' }}>
@@ -358,7 +360,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
                   {turn && <b className="psec num">{Math.ceil(left)}</b>}
                 </div>
                 <div className="pplate"><span className="pname">{isMe ? 'אני' : p.nick}{p.away ? ' · לא מחובר' : ''}</span>
-                  <span className="pstack num">{p.out ? 'בחוץ' : p.allIn && p.inHand ? 'אול-אין' : fmt(p.stack)}</span></div>
+                  <span className="pstack num">{p.out ? 'בחוץ' : p.allIn && p.inHand ? 'All-in' : fmt(p.stack)}</span></div>
                 {V.last?.id === p.id && V.phase === 'hand' && <motion.span key={V.last.text + V.pot} className="psaid" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>{V.last.text}</motion.span>}
                 <AnimatePresence>{bub && now - bub.k < 2500 && <motion.span key={bub.k} className="bubble" initial={{ scale: 0, y: 0 }} animate={{ scale: 1.2, y: -30 }} exit={{ opacity: 0 }}>{bub.e}</motion.span>}</AnimatePresence>
               </div>
@@ -375,7 +377,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           </motion.div>
         )}
       </AnimatePresence>
-        {myCards && <div className="phero"><PeekCards key={V.handNo} tall={tall} cards={myCards} revealed={V.phase !== 'hand'} hand={madeHand(myCards, V.board).name} /></div>}
+        {myCards && <div className="phero"><PeekCards key={V.handNo} tall={tall} cards={myCards} revealed={V.phase !== 'hand'} faceUp={peekOff} hand={madeHand(myCards, V.board).name} /></div>}
       </div>
 
       <div className="pdock">
@@ -384,45 +386,51 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         {myTurn && me ? (
           raiseTo == null ? (
             <div className="pactions">
-              <button className="pbtn" onClick={() => doAct({ type: 'fold' })}>פולד</button>
+              <button className="pbtn" onClick={() => doAct({ type: 'fold' })}>Fold</button>
               {toCall <= 0
-                ? <button className="pbtn" onClick={() => doAct({ type: 'check' })}>צ׳ק</button>
-                : <button className="pbtn" onClick={() => doAct({ type: 'call' })}>{toCall >= me.stack ? 'אול-אין' : 'קול'}<small className="num">{fmt(Math.min(toCall, me.stack))}</small></button>}
-              {mayRaise(V, me) && <button className="pbtn go" onClick={() => setRaiseTo(minTo)}><span className="pbubble num">{fmt(minTo)}</span>{V.curBet ? 'רייז' : 'הימור'}</button>}
+                ? <button className="pbtn" onClick={() => doAct({ type: 'check' })}>Check</button>
+                : <button className="pbtn" onClick={() => doAct({ type: 'call' })}>{toCall >= me.stack ? 'All-in' : 'Call'}<small className="num">{fmt(Math.min(toCall, me.stack))}</small></button>}
+              {mayRaise(V, me) && <button className="pbtn go" onClick={() => setRaiseTo(minTo)}><span className="pbubble num">{fmt(minTo)}</span>{V.curBet ? 'Raise' : 'Bet'}</button>}
             </div>
           ) : (
             <motion.div className="praise" initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-              <div className="praise-amt"><span>{raiseTo >= maxTo ? 'אול-אין' : V.curBet ? 'רייז ל' : 'הימור'}</span><b className="num">{fmt(raiseTo)}</b></div>
+              <div className="praise-amt"><span>{raiseTo >= maxTo ? 'All-in' : V.curBet ? 'Raise to' : 'Bet'}</span><b className="num">{fmt(raiseTo)}</b></div>
               <Dial min={minTo} max={maxTo} unit={V.sb} value={raiseTo} onChange={setRaiseTo} />
               <div className="ppresets">{presets.map(([t, v]) => <button key={t} className={v === raiseTo ? 'on' : ''} onClick={() => setRaiseTo(v)}>{t}</button>)}</div>
               <div className="pactions two">
-                <button className="pbtn" onClick={() => setRaiseTo(null)}>ביטול</button>
-                <button className="pbtn go" onClick={() => doAct({ type: 'raise', to: raiseTo })}>אישור</button>
+                <button className="pbtn" onClick={() => setRaiseTo(null)}>Cancel</button>
+                <button className="pbtn go" onClick={() => doAct({ type: 'raise', to: raiseTo })}>Confirm</button>
               </div>
             </motion.div>
           )
         ) : (
           <div className="pwait">
-            <div className="pactions waiting-actions"><button className="pbtn" disabled>פולד</button><button className="pbtn" disabled>צ׳ק</button><button className="pbtn go" disabled>רייז</button></div><span className="pstatus">{V.paused ? 'המנהל עצר את המשחק' : V.phase === 'show' ? 'היד הבאה מיד' : turnP ? `התור של ${turnP.nick}` : 'מחלקים קלפים'}</span>
+            <div className="pactions waiting-actions"><button className="pbtn" disabled>Fold</button><button className="pbtn" disabled>Check</button><button className="pbtn go" disabled>Raise</button></div><span className="pstatus">{V.paused ? 'המנהל עצר את המשחק' : V.phase === 'show' ? 'היד הבאה מיד' : turnP ? `התור של ${turnP.nick}` : 'מחלקים קלפים'}</span>
           </div>
         )}
       </div>
 
       <div className="ptools">
-              {isHost && <button className="pro-round" onClick={() => setMenu(true)} aria-label="ניהול השולחן"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg></button>}
+              {<button className="pro-round" onClick={() => setMenu(true)} aria-label={isHost ? 'ניהול השולחן והגדרות' : 'הגדרות'}><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg></button>}
               <button className="pro-round" onClick={() => setTray(t => !t)} aria-label="תגובות"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg></button>
               {tray && <div className="ptray">{EMOJIS.map(e => <button key={e} onClick={() => { emoji(e); setTray(false); }} aria-label={`שלח ${e}`}>{e}</button>)}</div>}
             </div>
 
       {/* manager menu */}
       <AnimatePresence>
-        {menu && isHost && (
+        {menu && (
           <>
             <motion.div className="scrim" onClick={() => setMenu(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
-            <motion.div className="sheet psheet" role="dialog" aria-modal="true" aria-label="ניהול השולחן" onKeyDown={e => { if (e.key === 'Escape') setMenu(false); }} initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 30 }}>
+            <motion.div className="sheet psheet" role="dialog" aria-modal="true" aria-label={isHost ? 'ניהול השולחן' : 'הגדרות'} onKeyDown={e => { if (e.key === 'Escape') setMenu(false); }} initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 30 }}>
               <div className="grab" />
               <button className="icon-btn" onClick={() => setMenu(false)} aria-label="סגור ניהול שולחן">{I.x}</button>
-              <h3 className="h-md" style={{ marginBottom: 10 }}>ניהול השולחן</h3>
+              <h3 className="h-md" style={{ marginBottom: 10 }}>הגדרות</h3>
+              <button className="glass row ptoggle" role="switch" aria-checked={!peekOff} onClick={togglePeek}>
+                <span className="who"><b>הצצה בקלפים</b><span>{peekOff ? 'כבוי: הקלפים שלך פשוט מוצגים פתוחים' : 'פועל: מחזיקים את הקלפים כדי להציץ'}</span></span>
+                <span className={`switch ${peekOff ? '' : 'on'}`} aria-hidden="true"><i /></span>
+              </button>
+              {isHost && <>
+              <h3 className="h-md" style={{ margin: '18px 0 10px' }}>ניהול השולחן</h3>
               <button className="pbtn" style={{ width: '100%', marginBottom: 10 }} onClick={() => {
                 const s = S.current!, t = Date.now();
                 if (!s.paused) { s.paused = true; s.pausedAt = t; }
@@ -440,6 +448,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
                 ))}
               </div>
               <button className="pbtn" style={{ width: '100%', color: 'var(--bad)' }} onClick={() => { const s = S.current!; if (s.phase !== 'hand') { s.phase = 'over'; commit(); setMenu(false); } else toast('אפשר לסיים בין ידיים. עצור את המשחק או חכה לסוף היד.'); }}>סיים משחק והצג תוצאות</button>
+              </>}
             </motion.div>
           </>
         )}

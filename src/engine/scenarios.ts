@@ -10,7 +10,12 @@ export const POST_ORDER: Pos[] = ['SB', 'BB', 'UTG', 'HJ', 'CO', 'BTN'];
 export const POS_NAME: Record<Pos, string> = {
   UTG: 'עמדה ראשונה', HJ: 'הייג׳ק', CO: 'קאטאוף', BTN: 'כפתור', SB: 'סמול בליינד', BB: 'ביג בליינד'
 };
-export const ACT_NAME: Record<Action, string> = { fold: 'פולד', check: 'צ׳ק', call: 'קול', raise: 'רייז' };
+export const ACT_NAME: Record<Action, string> = { fold: 'Fold', check: 'Check', call: 'Call', raise: 'Raise' };
+const OLD_LABEL: Record<string, string> = { 'פולד': 'Fold', 'צ׳ק': 'Check', 'רייז': 'Raise', 'הימור': 'Bet', '3-בט': '3-Bet', '4-בט': '4-Bet', 'אול-אין': 'All-in', 'להשלים': 'Call 1', 'לימפ': 'Limp' };
+/** Button text, in English (also converts spots saved by older versions). */
+export const btnLabel = (label: string) => OLD_LABEL[label] ?? label.replace(/^קול /, 'Call ');
+/** The name of an action as its button showed it in this spot (Bet vs Raise, 3-Bet, Limp…). */
+export const actName = (s: Scenario, a: Action) => { const b = s.buttons.find(x => x.action === a); return b ? btnLabel(b.label).replace(/ \d+$/, '') : ACT_NAME[a]; };
 const STREET_TERM: Record<Street, string> = { 0: '{{preflop}}', 3: '{{flop}}', 4: '{{turn}}', 5: '{{river}}' };
 export const STREET_NAME: Record<Street, string> = { 0: 'לפני הפלופ', 3: 'פלופ', 4: 'טרן', 5: 'ריבר' };
 
@@ -65,13 +70,13 @@ const blank = (): Omit<Scenario, 'kind' | 'street' | 'hero' | 'board' | 'heroPos
   eq: 0, eff: 0, need: 0, raiseThr: 0, fair: 0.5, correct: 'fold', ok: ['fold'], dist: 1, draw: null, meta: {}
 });
 const even = (x: number) => Math.max(2, Math.round(x / 2) * 2);
-const facingBtns = (call: number, raiseTo: number, raiseName = 'רייז'): Btn[] => [
-  { action: 'fold', label: 'פולד', sub: 'לוותר' },
-  { action: 'call', label: `קול ${call}`, sub: 'להשוות' },
+const facingBtns = (call: number, raiseTo: number, raiseName = 'Raise'): Btn[] => [
+  { action: 'fold', label: 'Fold', sub: 'לוותר' },
+  { action: 'call', label: `Call ${call}`, sub: 'להשוות' },
   { action: 'raise', label: raiseName, sub: `ל-${raiseTo}` }
 ];
-const freeBtns = (bet: number, betName = 'הימור'): Btn[] => [
-  { action: 'check', label: 'צ׳ק', sub: 'בלי לשים' },
+const freeBtns = (bet: number, betName = 'Bet'): Btn[] => [
+  { action: 'check', label: 'Check', sub: 'בלי לשים' },
   { action: 'raise', label: betName, sub: `${bet}` }
 ];
 
@@ -96,9 +101,9 @@ function genOpen(rng: Rng): Scenario {
     ...blank(), kind: 'open', street: 0, hero, board: [], heroPos, seats: seatsFrom(heroPos, m), history,
     pot: 3, toCall: heroPos === 'SB' ? 1 : 2,
     buttons: [
-      { action: 'fold', label: 'פולד', sub: 'לוותר' },
-      { action: 'call', label: heroPos === 'SB' ? 'להשלים' : 'לימפ', sub: heroPos === 'SB' ? '1' : '2' },
-      { action: 'raise', label: 'רייז', sub: heroPos === 'SB' ? 'ל-7' : 'ל-6' }
+      { action: 'fold', label: 'Fold', sub: 'לוותר' },
+      { action: 'call', label: heroPos === 'SB' ? 'Call 1' : 'Limp', sub: heroPos === 'SB' ? 'להשלים' : '2' },
+      { action: 'raise', label: 'Raise', sub: heroPos === 'SB' ? 'ל-7' : 'ל-6' }
     ],
     n: 5 - hi, thr: [], ip: heroPos === 'BTN', R: 1, made: madeHand(hero, [])
   };
@@ -142,7 +147,7 @@ function genVsOpen(rng: Rng, cfg: GenCfg, iters: number): Scenario {
   const raiseTo = 18 + 6 * callers.length;
   const s: Scenario = {
     ...blank(), kind: 'vsOpen', street: 0, hero, board: [], heroPos, seats: seatsFrom(heroPos, m), history,
-    pot, toCall, buttons: facingBtns(toCall, raiseTo, '3-בט'),
+    pot, toCall, buttons: facingBtns(toCall, raiseTo, '3-Bet'),
     n, thr: [OPEN_THR[opPos], ...callers.map(() => 5)], ip, R: ip ? 1 : 0.88, made: madeHand(hero, [])
   };
   s.eq = equity(hero, [], s.thr, iters, rng);
@@ -169,7 +174,7 @@ function genBBLimp(rng: Rng, cfg: GenCfg, iters: number): Scenario {
   const pot = 2 + 2 * k + (limpers.has('SB') ? 0 : 1);
   const s: Scenario = {
     ...blank(), kind: 'bbLimp', street: 0, hero, board: [], heroPos: 'BB', seats: seatsFrom('BB', m), history,
-    pot, toCall: 0, buttons: freeBtns(8 + 2 * k, 'רייז'),
+    pot, toCall: 0, buttons: freeBtns(8 + 2 * k, 'Raise'),
     n: k, thr: Array(k).fill(2), ip: false, R: 0.88, made: madeHand(hero, [])
   };
   s.eq = equity(hero, [], s.thr, iters, rng);
@@ -204,7 +209,7 @@ function genVs3bet(rng: Rng, iters: number): Scenario {
   const toCall = three - 6;
   const s: Scenario = {
     ...blank(), kind: 'vs3bet', street: 0, hero, board: [], heroPos, seats: seatsFrom(heroPos, m), history,
-    pot, toCall, buttons: facingBtns(toCall, 48, '4-בט'),
+    pot, toCall, buttons: facingBtns(toCall, 48, '4-Bet'),
     n: 1, thr: [10], ip: blindV, R: blindV ? 0.95 : 0.82, made: madeHand(hero, [])
   };
   s.eq = equity(hero, [], s.thr, iters, rng);
@@ -326,7 +331,7 @@ function genCheckRaised(rng: Rng, cfg: GenCfg, iters: number): Scenario {
   history.push({ pos: v, text: 'צ׳ק', kind: 'check' }, { pos: 'you', text: `הימור ${bet}`, kind: 'raise' }, { pos: v, text: `רייז ל-${raise}`, kind: 'raise' }, { pos: 'you', text: 'תורך', kind: 'street' });
   const s: Scenario = {
     ...blank(), kind: 'checkRaised', street: b.street, hero: b.hero, board: b.board, heroPos: b.heroPos, seats: seatsFrom(b.heroPos, m), history,
-    pot: b.P + bet + raise, toCall: raise - bet, buttons: facingBtns(raise - bet, 0, 'אול-אין').map(x => (x.action === 'raise' ? { ...x, sub: 'הכול' } : x)),
+    pot: b.P + bet + raise, toCall: raise - bet, buttons: facingBtns(raise - bet, 0, 'All-in').map(x => (x.action === 'raise' ? { ...x, sub: 'הכול' } : x)),
     n: 1, thr: [4], ip: true, R: 1, made: madeHand(b.hero, b.board), draw: b.draw
   };
   s.post = [2];
@@ -569,7 +574,7 @@ export function explain(s: Scenario, chosen: Action | 'timeout'): Explanation {
     mistake = M[key] || (chosen === 'call' && s.kind === 'open' ? '{{limp}} כמעט אף פעם לא הבחירה הנכונה: או שהיד שווה רייז, או שהיא שווה פולד.' : undefined);
     if (s.kind === 'open' && chosen === 'call') mistake = '{{limp}} כמעט אף פעם לא הבחירה הנכונה: או שהיד שווה רייז, או שהיא שווה פולד.';
   } else if (chosen !== s.correct) {
-    mistake = `ההחלטה הייתה ממש על הגבול, אז גם ${ACT_NAME[chosen as Action]} מקבל ניקוד חלקי.`;
+    mistake = `ההחלטה הייתה ממש על הגבול, אז גם ${actName(s, chosen as Action)} מקבל ניקוד חלקי.`;
   }
 
   const numbers: { label: string; value: string }[] = [];

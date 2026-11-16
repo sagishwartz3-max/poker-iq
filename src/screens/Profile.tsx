@@ -70,7 +70,7 @@ export function Profile() {
         <span className="muted" style={{ fontSize: 13.5 }}>ההתקדמות נשמרת במכשיר ובדירוג. התחברות עם Google או Apple, כדי להעביר אותה בין מכשירים, תגיע בעדכון הבא.</span>
       </div>
       <button className="glass list-btn" style={{ color: arm ? 'var(--bad)' : 'var(--text-2)' }}
-        onClick={() => { if (!arm) { setArm(true); setTimeout(() => setArm(false), 4000); return; } const n = P.nick; update(p => { Object.assign(p, blank(), { nick: n, onboarded: true }); }); setArm(false); toast('ההתקדמות אופסה'); }}>
+        onClick={() => { if (!arm) { setArm(true); setTimeout(() => setArm(false), 4000); return; } update(p => { Object.assign(p, blank(), { id: p.id, secret: p.secret, nick: p.nick, onboarded: true }); }); sync(); setArm(false); toast('ההתקדמות אופסה'); }}>
         <span>{arm ? 'בטוח? לחץ שוב כדי למחוק הכול' : 'איפוס התקדמות'}</span>
       </button>
       <p className="muted" style={{ fontSize: 12, textAlign: 'center', marginTop: 18 }}>Poker IQ הוא משחק אימון. אין בו כסף אמיתי ואין בו הימורים.</p>

@@ -254,3 +254,19 @@
 .vertical .praise { bottom: min(150px, calc(150px - var(--dy) + var(--safe-b) / var(--s))); }
 .vertical .ptray { bottom: min(92px, calc(92px - var(--dy) + var(--safe-b) / var(--s))); }
 .vertical .psheet { bottom: min(0px, calc(var(--safe-b) / var(--s) - var(--dy))); }
+
+/* settings: personal peek switch */
+.ptoggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 14px; text-align: right; cursor: pointer; color: inherit; font: inherit; margin-bottom: 4px; }
+.ptoggle .who { display: flex; flex-direction: column; gap: 3px; }
+.ptoggle .who span { opacity: .7; font-size: .85em; }
+
+/* sheets inside the scaled room: RTL ignores `left` when `right` is also set, so pin by left only;
+   the scrim covers the bleed area too, without a backdrop blur (it smears inside a scaled layer) */
+.reference-room .psheet { right: auto; margin: 0; }
+.reference-room > .scrim { inset: calc(var(--dy, 0px) * -1) calc(var(--dx, 0px) * -1); backdrop-filter: none; -webkit-backdrop-filter: none; background: #000a; }
+.vertical .psheet { bottom: min(0px, calc(var(--safe-b) / var(--s) - var(--dy))); padding-bottom: calc(26px + var(--safe-b) / var(--s)); }
+/* the sheet's text is sized in rem: enlarge the whole sheet so it reads like the rest of the room */
+.reference-room .psheet { transform-origin: 50% 100%; scale: 1.3; width: 560px; max-width: 560px; max-height: 680px; }
+.vertical .psheet { scale: 1.6; width: 540px; max-width: 540px; max-height: 900px; }
+/* English labels read left to right: "Raise to 40", "½ Pot", Min … All-in */
+.praise-amt, .ppresets, .psaid, .pbubble { direction: ltr; unicode-bidi: isolate; }

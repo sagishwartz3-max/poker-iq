@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
 import { RN, SUITS } from '../engine/cards';
-import { ACT_NAME, explain, POS_NAME, STREET_NAME, type Action, type Scenario } from '../engine/scenarios';
+import { actName, explain, POS_NAME, STREET_NAME, type Action, type Scenario } from '../engine/scenarios';
 import { askCoach, track } from '../net/supabase';
 import { useApp } from './ctx';
 
@@ -19,7 +19,7 @@ function describe(s: Scenario, chosen: Action | 'timeout') {
     `קופה: ${s.pot}. לשלם: ${s.toCall}.`,
     s.kind === 'open' ? `ציון היד בנוסחת צ'ן: ${s.meta.chen}, מינימום לפתיחה מהעמדה: ${s.meta.openThr}.`
       : `אקוויטי לפי המנוע: ${pct(s.eq)}${s.R < 1 ? `, אחרי תיקון מיקום ${pct(s.eff)}` : ''}. נדרש לקול: ${s.toCall ? pct(s.need) : 'אין'}. סף לרייז/הימור: ${pct(s.raiseThr)}.`,
-    `הפעולה הנכונה לפי המנוע: ${ACT_NAME[s.correct]}. השחקן בחר: ${chosen === 'timeout' ? 'לא הספיק לענות' : ACT_NAME[chosen]}.`
+    `הפעולה הנכונה לפי המנוע: ${actName(s, s.correct)}. השחקן בחר: ${chosen === 'timeout' ? 'לא הספיק לענות' : actName(s, chosen)}.`
   ].join('\n');
 }
 
@@ -31,7 +31,7 @@ export function Coach({ s, chosen }: { s: Scenario; chosen: Action | 'timeout' }
   const [answer, setAnswer] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const chips = [
-    chosen !== s.correct && chosen !== 'timeout' ? `למה לא ${ACT_NAME[chosen]}?` : `למה ${ACT_NAME[s.correct]} ולא משהו אחר?`,
+    chosen !== s.correct && chosen !== 'timeout' ? `למה לא ${actName(s, chosen)}?` : `למה ${actName(s, s.correct)} ולא משהו אחר?`,
     'מה היריב יכול להחזיק פה?',
     'איך שחקן מקצועי היה חושב פה?',
     'מה היה משנה את ההחלטה?'

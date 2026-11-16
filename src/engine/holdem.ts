@@ -89,16 +89,16 @@ export function act(s: TS, id: string, a: TAction, now: number): boolean {
   if (!p || !canAct(p)) return false;
   const toCall = s.curBet - p.bet;
   let text = '';
-  if (a.type === 'fold') { p.folded = true; text = 'פולד'; }
-  else if (a.type === 'check') { if (toCall > 0) return false; text = 'צ׳ק'; }
-  else if (a.type === 'call') { if (toCall <= 0) return false; pay(s, p, toCall); text = p.allIn ? 'אול-אין' : `קול ${toCall}`; }
+  if (a.type === 'fold') { p.folded = true; text = 'Fold'; }
+  else if (a.type === 'check') { if (toCall > 0) return false; text = 'Check'; }
+  else if (a.type === 'call') { if (toCall <= 0) return false; pay(s, p, toCall); text = p.allIn ? 'All-in' : `Call ${toCall}`; }
   else {
     const max = p.bet + p.stack;
     let to = Math.floor((a as { to: number }).to);
     if (!Number.isFinite(to) || !(to > 0)) return false;
     if (to >= max) to = max;
     else if (to < s.curBet + s.minRaise) return false;
-    if (to <= s.curBet) { pay(s, p, toCall); text = p.allIn ? 'אול-אין' : `קול ${toCall}`; }
+    if (to <= s.curBet) { pay(s, p, toCall); text = p.allIn ? 'All-in' : `Call ${toCall}`; }
     else {
       if (!mayRaise(s, p)) return false;
       pay(s, p, to - p.bet);
@@ -107,7 +107,7 @@ export function act(s: TS, id: string, a: TAction, now: number): boolean {
       const wasBet = s.curBet;
       s.curBet = to;
       if (fullRaise) for (const o of s.players) if (o !== p && canAct(o)) o.acted = false;
-      text = p.allIn ? `אול-אין ${to}` : wasBet === 0 ? `הימור ${to}` : `רייז ל-${to}`;
+      text = p.allIn ? `All-in ${to}` : wasBet === 0 ? `Bet ${to}` : `Raise to ${to}`;
     }
   }
   p.acted = true;

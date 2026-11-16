@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mulberry32 } from '../engine/cards';
-import { ACT_NAME, grade, makeScenario, type Action, type Scenario } from '../engine/scenarios';
+import { actName, grade, makeScenario, type Action, type Scenario } from '../engine/scenarios';
 import { recordSkill, rememberMistake } from '../game/progress';
 import { sfx } from '../game/sound';
 import { DUEL_CFG } from '../game/worlds';
@@ -287,7 +287,7 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
           <Feedback key={'dfb' + i} s={s} chosen={my.action} g={grade(s, my.action)} pts={my.pts}
             onNext={advance} nextDisabled={!host && i < DUEL_HANDS - 1}
             nextLabel={i >= DUEL_HANDS - 1 ? 'לתוצאות' : host ? 'יד הבאה' : `מחכה ל${opp?.nick || 'מארח'}…`}
-            extra={<div className="box"><div className="box-t">{opp?.nick || 'היריב'} בחר</div><b>{their.action === 'timeout' ? 'לא הספיק לענות' : ACT_NAME[their.action]}</b> · <span className="num">+{their.pts}</span> {grade(s, their.action) === 'g' ? '✓' : grade(s, their.action) === 'c' ? '≈' : '✗'}</div>} />
+            extra={<div className="box"><div className="box-t">{opp?.nick || 'היריב'} בחר</div><b>{their.action === 'timeout' ? 'לא הספיק לענות' : actName(s, their.action)}</b> · <span className="num">+{their.pts}</span> {grade(s, their.action) === 'g' ? '✓' : grade(s, their.action) === 'c' ? '≈' : '✗'}</div>} />
         )}
       </AnimatePresence>
       <Burst fire={burst} />

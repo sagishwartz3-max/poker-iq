@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useMemo, useState } from 'react';
-import { ACT_NAME, explain, type Action, type Scenario } from '../engine/scenarios';
+import { actName, explain, type Action, type Scenario } from '../engine/scenarios';
 import { Coach } from './Coach';
 import { I } from './Icons';
 import { Rich } from './Rich';
@@ -27,14 +27,14 @@ export function Feedback({ s, chosen, g, pts, onNext, nextLabel, extra, nextDisa
           <motion.span className={`pts num ${cls}`} initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.35 }}>+{pts}</motion.span>
         </div>
         <p className="best">
-          {chosen !== 'timeout' && chosen !== s.correct && <>בחרת {ACT_NAME[chosen]}. </>}
-          הכי טוב כאן: <b>{ACT_NAME[s.correct]}</b>
+          {chosen !== 'timeout' && chosen !== s.correct && <>בחרת {actName(s, chosen)}. </>}
+          הכי טוב כאן: <b>{actName(s, s.correct)}</b>
         </p>
         <motion.p className="bottom-line" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>{ex.short}</motion.p>
         {extra}
         <div className="box"><div className="box-t">מה קרה ביד</div><Rich text={ex.summary} /></div>
         <div className="box">
-          <div className="box-t">למה {ACT_NAME[s.correct]}?</div>
+          <div className="box-t">למה {actName(s, s.correct)}?</div>
           <ul className="why">{ex.why.map((w, i) => <motion.li key={i} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 + i * 0.07 }}><Rich text={w} /></motion.li>)}</ul>
         </div>
         <div className="box rule"><div className="box-t">💡 כלל אצבע לזכור</div><Rich text={ex.rule} /></div>
