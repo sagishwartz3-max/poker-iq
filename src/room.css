@@ -160,3 +160,83 @@
 @keyframes room-deal-hole { from { opacity:0; transform:translate(120px,-330px) scale(.35); } to { opacity:1; transform:translate(0,0) scale(1); } }
 .reference-room .chip-flight { position:absolute; translate:-50% -50%; z-index:9; pointer-events:none; }
 @media (prefers-reduced-motion:reduce) { .reference-room .peek-pair { animation:none; } }
+
+/* =====================================================================
+   Portrait room (940 × 1672), minimal: the same live components, re-placed.
+   ===================================================================== */
+.room-frame .reference-room.vertical { width: 940px; height: 1672px; }
+.vertical .lounge { background: url('/table/lounge.webp') center/cover no-repeat; filter: blur(4px) brightness(.62) saturate(.9); transform: scale(1.06); }
+.vertical .lounge::after { background: radial-gradient(ellipse at 50% 38%, transparent 30%, #000a 100%), linear-gradient(#0006, #0000 25%, #0000 70%, #000c); }
+.vertical .room-dealer { left: 322px; top: 222px; width: 296px; height: 236px; }
+.vertical .room-back { left: 29px; top: 39px; width: 76px; height: 76px; }
+.vertical .room-back svg { width: 34px; height: 34px; }
+.vertical .room-title { left: 132px; top: 46px; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid #c8a96455; min-width: 210px; }
+.vertical .room-title > b { font-size: 36px; }
+.vertical .room-title button { font-size: 15px; }
+.vertical .room-wallet { left: 608px; top: 38px; width: 304px; height: 78px; }
+.vertical .room-wallet b { font-size: 33px; }
+.vertical .room-wallet small { font-size: 19px; }
+.vertical .room-blinds { left: 243px; top: 155px; width: 454px; height: 54px; font-size: 26px; gap: 22px; }
+
+/* table: a vertical racetrack drawn in CSS (no stretched landscape photo) */
+.vertical .ptable { width: 940px; height: 1672px; }
+.vertical .rail { inset: auto; left: -42px; top: 436px; width: 1024px; height: 900px; border-radius: 50% / 27%;
+  background: radial-gradient(ellipse at 50% 30%, #3a332d 0%, #1f1a17 45%, #0e0c0b 100%);
+  box-shadow: 0 -2px 0 #6b5a4855 inset, 0 30px 60px #000c, 0 0 0 2px #000; }
+.vertical .rail::before { display: block; content: ''; position: absolute; inset: 8px; border-radius: inherit; border: 1px dashed #c8a96433; }
+.vertical .pfelt { display: block; position: absolute; inset: 42px; width: auto; height: auto; border-radius: 50% / 26%; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 36%, #22603f 0%, #154a31 45%, #0b3121 85%, #072519 100%);
+  box-shadow: inset 0 14px 40px #000a, inset 0 -10px 30px #0008, inset 0 0 0 2px #0008; }
+.vertical .pfelt::before { opacity: .45; }
+.vertical .pfelt-line { inset: 24px; border-radius: 50% / 26%; border: 1.5px solid #c8a96466; }
+.vertical .pfelt-logo { display: none; }
+.vertical .pboard { left: 470px; top: 652px; gap: 10px; transform: translateX(-50%) perspective(1100px) rotateX(28deg); }
+.vertical .pboard .card3d { --cw: 116px !important; }
+.vertical .card3d .rk { font-size: 38px; } .vertical .card3d .su { font-size: 32px; } .vertical .card3d .big { font-size: 72px; }
+.vertical .ppot { left: 470px; top: 584px; min-width: 296px; min-height: 56px; font-size: 25px; gap: 16px; padding: 4px 26px; }
+.vertical .ppot b { font-size: 34px; }
+.vertical .ppot > .chips { display: none; }
+.vertical .ppot > span:not(.chips) { margin-left: 0; }
+.vertical .room-center-chips { left: 418px; top: 836px; }
+.vertical .pwin { left: 470px; top: 945px; max-width: 760px; font-size: 22px; }
+
+/* seats: avatar on the outer side, plate toward the felt */
+.vertical .pseat { width: 230px; height: 100px; }
+.vertical .pavatar { width: 100px; height: 100px; }
+.vertical .pplate { left: 52px; top: 17px; width: 178px; height: 68px; padding: 5px 10px 5px 56px; border-radius: 18px 34px 34px 18px; }
+.vertical .pname { font-size: 22px; max-width: 112px; }
+.vertical .pstack { font-size: 24px; }
+.vertical .pseat.flip .pavatar { left: auto; right: 0; }
+.vertical .pseat.flip .pplate { left: 0; padding: 5px 56px 5px 12px; border-radius: 34px 18px 18px 34px; }
+.vertical .pseat.flip .pbacks { left: auto; right: 70px; }
+.vertical .pseat.flip .psaid { left: auto; right: 70px; }
+.vertical .pseat.flip .pshown { left: auto; right: 40px; }
+.vertical .pseat.flip .psec { left: auto; right: 11px; }
+.vertical .psec { left: 11px; top: 11px; width: 78px; height: 78px; }
+.vertical .pshown { top: 96px; left: 60px; }
+.vertical .pseat.me { left: 383px !important; top: 1222px !important; width: 370px; height: 120px; }
+.vertical .pseat.me .pavatar { width: 120px; height: 120px; }
+.vertical .pseat.me .pplate { left: 60px; top: 14px; width: 310px; height: 92px; padding-left: 74px; padding-right: 100px; }
+.vertical .pseat.me .psec { left: 284px; top: 18px; width: 84px; height: 84px; }
+.vertical .pseat.me .pname { font-size: 27px; }
+.vertical .pseat.me .pstack { font-size: 31px; }
+
+/* hole cards + hand */
+.vertical .peek-cards { left: 255px; top: 978px; width: 430px; height: 190px; }
+.vertical .peek-hint { font-size: 22px; }
+.vertical .peek-hand { left: 548px; top: 1000px; width: 470px; height: auto; transform: translate(60px, 60px) rotate(6deg); transform-origin: 80% 100%; }
+.vertical .peek-hand.visible { transform: translate(0, 0) rotate(0); }
+
+/* actions */
+.vertical .pactions { left: 80px; top: 1418px; width: 810px; grid-template-columns: 248px 248px 1fr; gap: 26px; }
+.vertical .pbtn { min-height: 92px; font-size: 36px; }
+.vertical .pbubble { top: -72px; }
+.vertical .praise { left: 60px; right: auto; top: auto; bottom: 150px; width: 820px; }
+.vertical .pstatus { left: 470px; top: 1340px; font-size: 19px; }
+.vertical .ptools { left: 42px; top: 1550px; flex-direction: row; gap: 34px; }
+.vertical .pro-round { width: 76px; height: 76px; }
+.vertical .ptray { bottom: 92px; }
+.vertical.reference-room > .pro-note { top: 230px; left: 70px; width: 800px; font-size: 22px; }
+.vertical .pdock > .pro-note { top: 1040px; left: 470px; transform: translateX(-50%); }
+.vertical .pdock > .pbtn { top: 1300px; left: 330px; }
+.vertical .psheet { width: 860px; max-width: 860px; max-height: 1400px; }

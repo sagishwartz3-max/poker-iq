@@ -3,7 +3,7 @@ import { isRed, RN, SUITS } from '../engine/cards';
 import { sfx } from '../game/sound';
 
 /** Cards stay face down; holding lifts only their near corners. */
-export function PeekCards({ cards, revealed, hand }: { cards: number[]; revealed: boolean; hand: string }) {
+export function PeekCards({ cards, revealed, hand, tall }: { cards: number[]; revealed: boolean; hand: string; tall?: boolean }) {
   const [held, setHeld] = useState(false);
   const open = held || revealed;
   const release = () => setHeld(false);
@@ -26,5 +26,5 @@ export function PeekCards({ cards, revealed, hand }: { cards: number[]; revealed
       <span className="peek-face"><b>{RN[c >> 2]}</b><i>{SUITS[c & 3]}</i><span>{SUITS[c & 3]}</span></span>
       <span className="peek-fold" />
     </span>)}</span>
-  </button><img className={`peek-hand ${held && !revealed ? 'visible' : ''}`} src="/table/peek-hand.webp" alt="" aria-hidden="true" /></>;
+  </button><img className={`peek-hand ${held && !revealed ? 'visible' : ''}`} src={tall ? "/table/peek-hand-crop.webp" : "/table/peek-hand.webp"} alt="" aria-hidden="true" /></>;
 }

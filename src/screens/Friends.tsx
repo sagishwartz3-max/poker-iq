@@ -9,7 +9,7 @@ import { Burst } from '../ui/Burst';
 import { Chips } from '../ui/Chips';
 import { Dial } from '../ui/Dial';
 import { PeekCards } from '../ui/PeekCards';
-import { RoomStage } from '../ui/RoomStage';
+import { ROOM, RoomStage } from '../ui/RoomStage';
 import { useApp } from '../ui/ctx';
 import { I } from '../ui/Icons';
 import { shareLinks } from './Duel';
@@ -52,6 +52,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const [raiseTo, setRaiseTo] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
   const [tray, setTray] = useState(false);
+  const [tall, setTall] = useState(() => typeof window !== 'undefined' && innerHeight > innerWidth * 1.15);
   const [giftAmt, setGiftAmt] = useState('');
   const [now, setNow] = useState(Date.now());
   const [bubbles, setBubbles] = useState<Record<string, { e: string; k: number }>>({});
@@ -281,15 +282,21 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
 
   /* ---------------- the table ---------------- */
   const N = V.players.length, hi = Math.max(0, V.players.findIndex(p => p.id === P.id));
-  // Seat centers are authored in the same camera plane as the reference image.
-  const seats = N <= 6
-    ? [[610, 815], [210, 420], [410, 230], [1215, 230], [1455, 420], [1325, 595]]
-    : [[610, 815], [200, 590], [180, 425], [300, 260], [550, 220], [1110, 220], [1390, 260], [1480, 425], [1390, 590]];
+  // Seat centers are authored in the camera plane of each reference image (landscape 1672×941, portrait 940×1672).
+  const room = tall ? ROOM.tall : ROOM.wide;
+  const seats = tall
+    ? (N <= 6
+      ? [[383, 1222], [137, 602], [193, 362], [745, 362], [793, 602], [780, 840]]
+      : [[383, 1222], [160, 840], [137, 602], [193, 362], [365, 290], [575, 290], [745, 362], [793, 602], [780, 840]])
+    : (N <= 6
+      ? [[610, 815], [210, 420], [410, 230], [1215, 230], [1455, 420], [1325, 595]]
+      : [[610, 815], [200, 590], [180, 425], [300, 260], [550, 220], [1110, 220], [1390, 260], [1480, 425], [1390, 590]]);
   const pos = (i: number) => {
     const relative = (i - hi + N) % N;
-    const slot = N === 2 && relative === 1 ? seats[2] : seats[relative];
-    return { x: slot[0] / 1672 * 100, y: slot[1] / 941 * 100 };
+    const slot = N === 2 && relative === 1 ? seats[tall ? 3 : 2] : seats[relative];
+    return { x: slot[0] / room.w * 100, y: slot[1] / room.h * 100 };
   };
+  const potAt = tall ? { x: '50%', y: '50%' } : { x: '49%', y: '59%' };
   const mid = (p: { x: number; y: number }, t: number) => ({ x: p.x + (50 - p.x) * t, y: p.y + (54 - p.y) * t });
   const turnP = V.players.find(p => p.id === V.turn);
   const lastActor = V.last ? V.players.findIndex(p => p.id === V.last!.id) : -1;
@@ -299,7 +306,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const mmss = `${String(Math.floor(lvLeft / 60000)).padStart(2, '0')}:${String(Math.floor(lvLeft / 1000) % 60).padStart(2, '0')}`;
 
   return (
-    <RoomStage label={practice ? 'שולחן אימון מול בוטים' : 'שולחן פוקר לחברים'}>
+    <RoomStage onLayout={setTall} label={practice ? 'שולחן אימון מול בוטים' : 'שולחן פוקר לחברים'}>{() => (<>
       <div className="lounge" aria-hidden="true" />
       <img className="room-dealer" src="/table/dealer.webp" alt="" aria-hidden="true" />
       <div className="pro-top">
@@ -320,7 +327,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         {lastActor >= 0 && V.phase === 'hand' && V.last && !['צ׳ק', 'פולד'].includes(V.last.text) && (
           <motion.div key={`${V.handNo}-${V.pot}-${V.last.id}`} className="chip-flight"
             initial={{ left: `${pos(lastActor).x}%`, top: `${pos(lastActor).y}%`, opacity: 1, scale: .8 }}
-            animate={{ left: '49%', top: '59%', opacity: [1, 1, 0], scale: 1 }} transition={{ duration: .65, ease: 'easeOut' }}>
+            animate={{ left: potAt.x, top: potAt.y, opacity: [1, 1, 0], scale: 1 }} transition={{ duration: .65, ease: 'easeOut' }}>
             <Chips amount={V.bb * 3} unit={V.bb} size={33} />
           </motion.div>
         )}
@@ -328,7 +335,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           const index = V.players.findIndex(p => p.id === w.id);
           const xy = pos(index);
           return <motion.div key={`${V.handNo}-${w.id}`} className="chip-flight"
-            initial={{ left: '49%', top: '59%', opacity: 1, scale: 1.2 }}
+            initial={{ left: potAt.x, top: potAt.y, opacity: 1, scale: 1.2 }}
             animate={{ left: `${xy.x}%`, top: `${xy.y}%`, opacity: [1, 1, 0], scale: .7 }}
             transition={{ delay: .6, duration: .9, ease: 'easeInOut' }}>
             <Chips amount={w.amount} unit={V.bb} size={40} />
@@ -337,12 +344,12 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         {V.players.map((p, i) => {
           const xy = pos(i), isMe = p.id === P.id, turn = V.turn === p.id && V.phase === 'hand';
           const shown = V.shown[p.id], won = V.phase === 'show' && V.winners.find(w => w.id === p.id);
-          const bub = bubbles[p.id], bp = { x: xy.x + (xy.x < 50 ? 1 : -1), y: xy.y + (isMe ? -12 : 10) }, dp = mid(xy, 0.12);
+          const bub = bubbles[p.id], bp = tall ? { x: xy.x + (xy.x < 50 ? 4 : -4), y: xy.y + (isMe ? -9 : 5.6) } : { x: xy.x + (xy.x < 50 ? 1 : -1), y: xy.y + (isMe ? -12 : 10) }, dp = mid(xy, 0.12);
           const relative = (i - hi + N) % N;
           const avatar = ['10_avatar_hero', '07_avatar_left', '05_avatar_top_left', '06_avatar_top_right', '08_avatar_right', '09_avatar_lower_right'][relative % 6];
           return (
             <div key={p.id}>
-              <div className={`pseat ${p.inHand && !p.folded ? '' : 'dim'} ${isMe ? 'me' : ''} ${turn ? 'turn' : ''} ${won ? 'won' : ''}`} style={{ left: `${xy.x}%`, top: `${xy.y}%` }}>
+              <div className={`pseat ${tall && xy.x > 50 ? 'flip' : ''} ${p.inHand && !p.folded ? '' : 'dim'} ${isMe ? 'me' : ''} ${turn ? 'turn' : ''} ${won ? 'won' : ''}`} style={{ left: `${xy.x}%`, top: `${xy.y}%` }}>
                 {p.has && !shown && !isMe && <div className="pbacks"><i /><i /></div>}
                 {shown && !isMe && <div className="pshown">{shown.map((c, k) => <MiniCard key={k} c={c} size={28} delay={k * 0.1} />)}</div>}
                 <div className="pavatar" style={{ '--h': `${(p.nick.charCodeAt(0) * 47) % 360}` } as React.CSSProperties}>
@@ -368,7 +375,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           </motion.div>
         )}
       </AnimatePresence>
-        {myCards && <div className="phero"><PeekCards key={V.handNo} cards={myCards} revealed={V.phase !== 'hand'} hand={madeHand(myCards, V.board).name} /></div>}
+        {myCards && <div className="phero"><PeekCards key={V.handNo} tall={tall} cards={myCards} revealed={V.phase !== 'hand'} hand={madeHand(myCards, V.board).name} /></div>}
       </div>
 
       <div className="pdock">
@@ -438,6 +445,6 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         )}
       </AnimatePresence>
       <Burst fire={burst} colors={['#e9c46a', '#fff1c1', '#c9a227']} />
-    </RoomStage>
+    </>)}</RoomStage>
   );
 }
