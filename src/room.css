@@ -240,3 +240,17 @@
 .vertical .pdock > .pro-note { top: 1040px; left: 470px; transform: translateX(-50%); }
 .vertical .pdock > .pbtn { top: 1300px; left: 330px; }
 .vertical .psheet { width: 860px; max-width: 860px; max-height: 1400px; }
+
+/* Fill the whole screen: the canvas keeps its proportions, the lounge bleeds to the edges,
+   and in portrait the top bar / controls slide to the real screen edges (minus the notch / home bar). */
+.room-frame .reference-room { overflow: visible; }
+.room-frame { background: #050505; }
+.reference-room .lounge { inset: calc(var(--dy, 0px) * -1) calc(var(--dx, 0px) * -1); }
+.vertical .lounge { transform: none; inset: calc(var(--dy, 0px) * -1 - 20px) calc(var(--dx, 0px) * -1 - 20px); }
+.vertical :is(.room-back, .room-title, .room-wallet) { translate: 0 min(0px, calc(var(--safe-t) / var(--s) - var(--dy))); }
+.vertical .room-blinds { translate: 0 min(0px, calc((var(--safe-t) / var(--s) - var(--dy)) * .55)); }
+.vertical :is(.pactions:not(.praise .pactions), .ptools) { translate: 0 max(0px, calc(var(--dy) - var(--safe-b) / var(--s))); }
+.vertical .pstatus { translate: 0 max(0px, calc((var(--dy) - var(--safe-b) / var(--s)) * .5)); }
+.vertical .praise { bottom: min(150px, calc(150px - var(--dy) + var(--safe-b) / var(--s))); }
+.vertical .ptray { bottom: min(92px, calc(92px - var(--dy) + var(--safe-b) / var(--s))); }
+.vertical .psheet { bottom: min(0px, calc(var(--safe-b) / var(--s) - var(--dy))); }
