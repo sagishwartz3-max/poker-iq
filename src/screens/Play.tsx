@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { hashStr, mulberry32 } from '../engine/cards';
 import { grade, makeScenario, type Action, type GenCfg, type Scenario } from '../engine/scenarios';
-import { dueMistakes, nodeId, promoteMistake, recordSkill, rememberMistake, SKILLS, today, unlocked, yesterday } from '../game/progress';
+import { dueMistakes, gain, nodeId, promoteMistake, recordSkill, rememberMistake, SKILLS, today, unlocked, yesterday } from '../game/progress';
 import { sfx } from '../game/sound';
 import { track } from '../net/supabase';
 import { DAILY_CFG, drillCfg, HANDS_PER_ROUND, LEVEL_NAMES, levelOf, stageCfg, WORLDS } from '../game/worlds';
@@ -101,14 +101,14 @@ export function Play({ args }: { args: PlayArgs }) {
       const squares = res.map(x => (x === 'g' ? '🟩' : x === 'c' ? '🟨' : '🟥')).join('');
       update(p => {
         p.daily = { date: today(), score: sum, squares };
-        p.xp += Math.round(sum * 0.5);
+        gain(p, sum * 0.5);
       });
       sync(); toast(`+${Math.round(sum * 0.5)} XP`); go('daily'); return;
     }
     if (args.mode === 'review' || args.mode === 'drill') {
       const good = res.filter(x => x !== 'b').length;
       const xp = good * (args.mode === 'review' ? 20 : 15);
-      update(p => { p.xp += xp; }); sync();
+      update(p => { gain(p, xp); }); sync();
       toast(args.mode === 'review' ? (good ? `תיקנת ${good} טעויות · +${xp} XP. הן יחזרו בעוד כמה ימים לבדיקה` : 'נסה שוב, ההסבר יעזור')
         : `${good}/${total} נכונות · +${xp} XP`);
       go(args.mode === 'drill' ? 'profile' : 'home'); return;
@@ -117,7 +117,7 @@ export function Play({ args }: { args: PlayArgs }) {
     const stars = frac >= 0.9 ? 3 : frac >= 0.75 ? 2 : frac >= 0.6 ? 1 : 0;
     const xp = Math.round(sum * (1 + 0.25 * args.w!) * 0.6);
     const before = levelOf(P.xp), after = levelOf(P.xp + xp);
-    update(p => { p.xp += xp; const id = nodeId(args.w!, args.l!); if (stars > (p.stars[id] || 0)) p.stars[id] = stars; });
+    update(p => { gain(p, xp); const id = nodeId(args.w!, args.l!); if (stars > (p.stars[id] || 0)) p.stars[id] = stars; });
     sync();
     setResult({ stars, xp, lvUp: after > before ? after : null });
     setPhase('done');
@@ -132,7 +132,7 @@ export function Play({ args }: { args: PlayArgs }) {
 
   const quit = () => {
     if (args.mode === 'daily' && res.length) { finish(); return; } // the attempt is used: bank what was played
-    if (endless && points) { const xp = Math.round(points * 0.3); update(p => { p.xp += xp; }); sync(); toast(`+${xp} XP מאימון חופשי`); }
+    if (endless && points) { const xp = Math.round(points * 0.3); update(p => { gain(p, xp); }); sync(); toast(`+${xp} XP מאימון חופשי`); }
     go(args.mode === 'daily' ? 'daily' : 'home');
   };
 

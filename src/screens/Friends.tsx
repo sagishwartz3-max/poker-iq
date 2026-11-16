@@ -2,6 +2,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isRed, madeHand, RN, SUITS } from '../engine/cards';
 import { act, BLINDS, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, publicView, rebuy, seat, startHand, timeoutAction, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
+import { adviceText, gradeTable, reviewText, tableAdvice, type TGrade } from '../engine/coach';
+import { gain, TABLE_XP_DAY, today } from '../game/progress';
 import { sfx } from '../game/sound';
 import { createRoom, getRoom, PUBLIC_URL, track } from '../net/supabase';
 import { TableNet, type Cmd, type TPeer } from '../net/table';
@@ -11,6 +13,7 @@ import { Dial } from '../ui/Dial';
 import { PeekCards } from '../ui/PeekCards';
 import { ROOM, RoomStage } from '../ui/RoomStage';
 import { useApp } from '../ui/ctx';
+import { Rich } from '../ui/Rich';
 import { I } from '../ui/Icons';
 import { shareLinks } from './Duel';
 
@@ -37,11 +40,11 @@ const Opt = <T,>({ label, value, set, opts }: { label: string; value: T; set: (v
 );
 
 export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPlaying: (b: boolean) => void }) {
-  const { P, toast, go } = useApp();
+  const { P, toast, go, update, sync } = useApp();
   const [code, setCode] = useState('');
   const [joinCode, setJoinCode] = useState(initialCode || '');
   const [isHost, setIsHost] = useState(false);
-  const [cfg, setCfg] = useState<TCfg>({ ...DEFAULT_CFG, rebuys: 0 });
+  const [cfg, setCfg] = useState<TCfg>({ ...DEFAULT_CFG, rebuys: 0, learn: true });
   const [V, setV] = useState<View | null>(null);
   const [skew, setSkew] = useState(0); // host clock minus ours
   const [peers, setPeers] = useState<TPeer[]>([]);
@@ -53,6 +56,11 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const [menu, setMenu] = useState(false);
   const [tray, setTray] = useState(false);
   const [peekOff, setPeekOff] = useState(() => { try { return localStorage.getItem('pokeriq-peek-off') === '1'; } catch { return false; } });
+  const [helpOff, setHelpOff] = useState(() => { try { return localStorage.getItem('pokeriq-help-off') === '1'; } catch { return false; } });
+  const toggleHelp = () => setHelpOff(v => { try { localStorage.setItem('pokeriq-help-off', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
+  // this player's graded decisions tonight (private, never sent to the table)
+  const [log, setLog] = useState<{ hand: number; g: TGrade; text: string }[]>([]);
+  const [earned, setEarned] = useState(0);
   const togglePeek = () => setPeekOff(v => { try { localStorage.setItem('pokeriq-peek-off', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
   const [tall, setTall] = useState(() => typeof window !== 'undefined' && innerHeight > innerWidth * 1.15);
   const [giftAmt, setGiftAmt] = useState('');
@@ -175,13 +183,31 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const hostNow = now + skew;
   const left = V && V.phase === 'hand' ? Math.min(V.cfg.turnSec, Math.max(0, (V.deadline - (V.paused ? V.pausedAt ?? hostNow : hostNow)) / 1000)) : 0;
   const lvLeft = V && V.levelEnds ? Math.max(0, V.levelEnds - hostNow) : 0;
+  const learn = !!V?.cfg.learn;
+  const potAll = V ? V.pot : 0; // the pot already includes this street's bets
+  const nOpp = V ? V.players.filter(p => p.inHand && !p.folded && p.id !== P.id).length : 0;
+  const payNow = me ? Math.min(toCall, me.stack) : 0;
+  // the coach's read of my spot: always computed on my turn (to grade the decision), shown only in learning mode
+  const advice = useMemo(() => (myTurn && myCards && V ? tableAdvice(myCards, V.board, nOpp, potAll, payNow, V.handNo * 977 + V.street * 31 + payNow) : null),
+    [myTurn, myCards?.join(), V?.board.length, V?.handNo, nOpp, potAll, payNow]); // eslint-disable-line react-hooks/exhaustive-deps
+  const handLog = V ? log.filter(x => x.hand === V.handNo) : [];
 
   useEffect(() => { setRaiseTo(null); if (V?.handNo) sfx.deal(0); }, [V?.handNo]);
   useEffect(() => { setRaiseTo(null); if (myTurn) sfx.tick(); }, [myTurn, V?.street]);
   useEffect(() => { if (V?.last) sfx.chip(); }, [V?.last?.id, V?.last?.text, V?.pot]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (V?.phase === 'show' && V.winners.some(w => w.id === P.id)) { sfx.good(); setBurst(b => b + 1); } }, [V?.phase, V?.handNo]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const grade = (a: TAction) => {
+    if (!advice || !V) return;
+    const kind = a.type;
+    const g = gradeTable(advice, kind);
+    setLog(l => [...l, { hand: V.handNo, g, text: reviewText(advice, kind, g) }]);
+    const want = g === 'g' ? 6 : g === 'c' ? 3 : 0, d = today();
+    const used = P.tableDay?.date === d ? P.tableDay.xp : 0, give = Math.max(0, Math.min(want, TABLE_XP_DAY - used));
+    if (give) { update(p => { if (p.tableDay?.date !== d) p.tableDay = { date: d, xp: 0 }; p.tableDay.xp += give; gain(p, give); }); setEarned(e => e + give); sync(); }
+  };
   const doAct = (a: TAction) => {
+    grade(a);
     sfx.tap(); setRaiseTo(null);
     if (isHost) { const s = S.current!; if (act(s, P.id, a, Date.now())) commit(); }
     else net.current?.sendCmd({ t: 'act', hand: V!.handNo, a });
@@ -214,6 +240,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         <Opt label="ז׳יטונים לכל שחקן" value={cfg.stack} set={v => setCfg({ ...cfg, stack: v })} opts={[[1000, '1,000'], [2000, '2,000'], [5000, '5,000'], [10000, '10,000']]} />
         <Opt label="הבליינדים עולים כל" value={cfg.levelMin} set={v => setCfg({ ...cfg, levelMin: v })} opts={[[0, 'לא עולים'], [5, '5 דק׳'], [10, '10 דק׳'], [15, '15 דק׳'], [20, '20 דק׳']]} />
         <Opt label="כמה ריביי מותר לכל שחקן" value={cfg.rebuys} set={v => setCfg({ ...cfg, rebuys: v })} opts={[[0, 'בלי'], [1, '1'], [2, '2'], [3, '3'], [-1, 'בלי הגבלה']]} />
+        <Opt label="מצב לימוד (לכל השחקנים)" value={!!cfg.learn} set={v => setCfg({ ...cfg, learn: v })} opts={[[true, 'פועל: עוזר אישי וסיכום יד'], [false, 'כבוי']]} />
         <Opt label="זמן לכל תור" value={cfg.turnSec} set={v => setCfg({ ...cfg, turnSec: v })} opts={[[20, '20 שנ׳'], [30, '30 שנ׳'], [45, '45 שנ׳'], [60, 'דקה']]} />
         <button className="btn gold wide" disabled={busy} onClick={() => enter(null)}>פתח שולחן</button>
       </motion.div>
@@ -262,6 +289,14 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         </motion.div>
       )}
       {V.phase === 'over' && <div style={{ textAlign: 'center' }}><div className="trophy">🏆</div><h1 className="h-xl" style={{ marginBottom: 14 }}>{standings[0]?.nick} ניצח!</h1></div>}
+      {V.phase === 'over' && log.length > 0 && (
+        <div className="glass" style={{ padding: 16, borderRadius: 22, marginBottom: 14 }}>
+          <h3 className="h-md" style={{ marginBottom: 6 }}>הדוח שלך מהערב</h3>
+          <p style={{ margin: '0 0 6px' }}><b className="num">{log.length}</b> החלטות · <b className="num">{Math.round(log.filter(x => x.g !== 'b').length / log.length * 100)}%</b> טובות · <span className="gold-text">+{earned} XP ומטבעות</span></p>
+          {log.find(x => x.g === 'b') && <p className="muted" style={{ margin: 0, fontSize: 14 }}>הטעות שכדאי לזכור: {log.find(x => x.g === 'b')!.text}</p>}
+          <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}>ההחלטות נבדקות רק אצלך. אף שחקן אחר לא רואה אותן.</p>
+        </div>
+      )}
       <div className="rows">
         {(V.phase === 'over' ? standings : V.players).map((p, k) => (
           <motion.div key={p.id} layout className={`glass row ${p.id === P.id ? 'me' : ''}`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
@@ -313,9 +348,9 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
       <img className="room-dealer" src="/table/dealer.webp" alt="" aria-hidden="true" />
       <div className="pro-top">
         <button className="pro-round room-back" onClick={leave} aria-label="יציאה">{I.back}</button>
-        <div className="room-title"><b>שולחן חברים</b><button onClick={() => practice ? toast('שולחן אימון — הבוטים אינם שחקנים אמיתיים') : sh.copy().then(ok => toast(ok ? 'ההזמנה הועתקה' : link))}>{practice ? 'אימון מול בוטים' : `קוד ${code} · העתק הזמנה`}</button></div>
+        <div className="room-title"><b>שולחן חברים</b><button onClick={() => practice ? toast('שולחן אימון — הבוטים אינם שחקנים אמיתיים') : sh.copy().then(ok => toast(ok ? 'ההזמנה הועתקה' : link))}>{practice ? 'אימון מול בוטים' : `קוד ${code} · העתק הזמנה`}{learn ? ' · מצב לימוד' : ''}</button></div>
         <div className="pro-pill room-blinds"><span>בליינדים <b className="num">{V.sb}/{V.bb}</b></span>{V.paused ? <em>הפסקה</em> : V.levelEnds ? <em className="num">{mmss}</em> : <em className="num">יד {V.handNo}</em>}</div>
-        <div className="room-wallet"><span className="wallet-coins" aria-hidden="true"><i /><i /><i /></span><div><b className="num">{fmt(me?.stack ?? 0)}</b><small>מטבעות משחק</small></div></div>
+        <div className="room-wallet"><span className="wallet-coins" aria-hidden="true"><i /><i /><i /></span><div><b className="num">{fmt(P.coins ?? 0)}</b><small>המטבעות שלי</small></div></div>
       </div>
       {!hostHere && !isHost && <div className="pro-note">המנהל התנתק. המשחק ימשיך כשיחזור.</div>}
 
@@ -380,7 +415,15 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         {myCards && <div className="phero"><PeekCards key={V.handNo} tall={tall} cards={myCards} revealed={V.phase !== 'hand'} faceUp={peekOff} hand={madeHand(myCards, V.board).name} /></div>}
       </div>
 
-      <div className="pdock">
+      <div className={`pdock ${learn && !helpOff && (advice || handLog.length) ? 'with-help' : ''}`}>
+        {learn && !helpOff && advice && (() => { const t = adviceText(advice); return (
+          <motion.div key={`${V.handNo}-${V.street}-${payNow}`} className="phelp" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="note" aria-label="העוזר האישי">
+            <b><Rich text={t.line} /></b><span><Rich text={t.tip} /></span>
+          </motion.div>); })()}
+        {learn && !helpOff && !myTurn && V.phase === 'show' && handLog.length > 0 && (
+          <motion.div className="phelp review" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="note" aria-label="סיכום היד שלך">
+            <b>סיכום היד שלך</b>{handLog.slice(-2).map((x, k) => <span key={k} className={x.g}>{x.g === 'g' ? '✓' : x.g === 'c' ? '≈' : '✗'} {x.text}</span>)}
+          </motion.div>)}
         {!myCards && <div className="pro-note">{me?.out ? 'יצאת מהמשחק' : me && me.stack === 0 ? 'נגמרו לך הז׳יטונים' : 'תצטרף ביד הבאה'}</div>}
         {me && canRebuy(V as unknown as TS, me as any) && <button className="pbtn go" onClick={doRebuy}>ריביי · {fmt(V.cfg.stack)}</button>}
         {myTurn && me ? (
@@ -429,8 +472,14 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
                 <span className="who"><b>הצצה בקלפים</b><span>{peekOff ? 'כבוי: הקלפים שלך פשוט מוצגים פתוחים' : 'פועל: מחזיקים את הקלפים כדי להציץ'}</span></span>
                 <span className={`switch ${peekOff ? '' : 'on'}`} aria-hidden="true"><i /></span>
               </button>
+              {learn && <button className="glass row ptoggle" role="switch" aria-checked={!helpOff} onClick={toggleHelp}>
+                <span className="who"><b>עוזר אישי</b><span>{helpOff ? 'כבוי' : 'פועל: בתור שלך תראה כמה היד חזקה וכמה שווה לשלם, ואחרי כל יד סיכום'}</span></span>
+                <span className={`switch ${helpOff ? '' : 'on'}`} aria-hidden="true"><i /></span>
+              </button>}
+              {log.length > 0 && <p className="muted" style={{ margin: '8px 2px 0', fontSize: 13 }}>הערב: {log.length} החלטות, {Math.round(log.filter(x => x.g !== 'b').length / log.length * 100)}% טובות · +{earned} XP ומטבעות</p>}
               {isHost && <>
               <h3 className="h-md" style={{ margin: '18px 0 10px' }}>ניהול השולחן</h3>
+              <button className="pbtn" style={{ width: '100%', marginBottom: 10 }} onClick={() => { const s = S.current!; s.cfg = { ...s.cfg, learn: !s.cfg.learn }; commit(); toast(s.cfg.learn ? 'מצב לימוד הופעל לכל השולחן' : 'מצב לימוד כובה'); }}>{learn ? 'כבה מצב לימוד לכולם' : 'הפעל מצב לימוד לכולם'}</button>
               <button className="pbtn" style={{ width: '100%', marginBottom: 10 }} onClick={() => {
                 const s = S.current!, t = Date.now();
                 if (!s.paused) { s.paused = true; s.pausedAt = t; }

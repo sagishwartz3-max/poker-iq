@@ -7,22 +7,33 @@ export interface Progress {
   mistakes: Mistake[];
   /** accuracy per skill bucket, for the leak map: key -> [hands, points] */
   skills: Record<string, [number, number]>;
+  /** game coins: earned with every XP point and at the friends' table; never real money */
+  coins: number;
+  /** XP already earned today from decisions at the friends' table (capped) */
+  tableDay: { date: string; xp: number };
 }
 /** A missed spot scheduled for spaced repetition. box 0..3: next review after 0, 1, 3, 7 days. */
 export interface Mistake { s: Scenario; box: number; due: number }
 const KEY = 'pokeriq-app-v1';
+export const START_COINS = 2000;
+export const TABLE_XP_DAY = 300;
+/** Every XP point earned also adds a coin to the wallet. */
+export function gain(p: Progress, xp: number) { const v = Math.max(0, Math.round(xp)); p.xp += v; p.coins = (p.coins || 0) + v; }
 const rid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => ((Math.random() * 16) | 0).toString(16)));
 const secret = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('');
 
 export function blank(): Progress {
   return { id: rid(), secret: secret(), nick: '', xp: 0, stars: {}, lessons: {}, daily: null, dailyStreak: 0, lastDaily: '',
-    hands: 0, correct: 0, wins: 0, losses: 0, sound: true, onboarded: false, mistakes: [], skills: {} };
+    hands: 0, correct: 0, wins: 0, losses: 0, sound: true, onboarded: false, mistakes: [], skills: {}, coins: START_COINS, tableDay: { date: '', xp: 0 } };
 }
 export function load(): Progress {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const p: Progress = { ...blank(), ...JSON.parse(raw) };
+      const saved = JSON.parse(raw);
+      const p: Progress = { ...blank(), ...saved };
+      // saves from before the wallet: credit what was already earned
+      if (typeof saved.coins !== 'number') p.coins = START_COINS + (p.xp || 0);
       // older saves kept plain scenarios
       p.mistakes = (p.mistakes as any[]).map(m => ('s' in m && 'due' in m ? m : { s: m, box: 0, due: 0 }));
       return p;

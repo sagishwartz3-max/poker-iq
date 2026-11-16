@@ -26,7 +26,7 @@ export async function savePlayer(p: Progress) {
   const d = p.daily && p.daily.date === today() ? p.daily : null;
   const { error } = await supabase.rpc('poker_save_player', {
     p_id: p.id, p_secret: p.secret, p_nickname: p.nick, p_xp: p.xp, p_hands: p.hands, p_correct: p.correct,
-    p_daily_date: d ? d.date : null, p_daily_score: d ? d.score : 0, p_daily_squares: d ? d.squares : ''
+    p_daily_date: d ? d.date : null, p_daily_score: d ? d.score : 0, p_daily_squares: d ? d.squares : '', p_coins: p.coins ?? 0
   });
   if (error) throw error;
 }

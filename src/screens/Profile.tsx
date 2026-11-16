@@ -24,9 +24,9 @@ export function Profile() {
       <div className="pgrid">
         <div className="glass stat"><span>XP</span><b className="num">{P.xp.toLocaleString('he-IL')}</b></div>
         <div className="glass stat"><span>דיוק</span><b className="num">{P.hands ? Math.round((P.correct / P.hands) * 100) : 0}%</b></div>
-        <div className="glass stat"><span>ידיים</span><b className="num">{P.hands}</b></div>
         <div className="glass stat"><span>כוכבים</span><b className="num">{stars}</b></div>
         <div className="glass stat"><span>ניצחונות</span><b className="num">{P.wins}</b></div>
+        <div className="glass stat"><span>מטבעות</span><b className="num">{(P.coins ?? 0).toLocaleString('he-IL')}</b></div>
         <div className="glass stat"><span>רצף יומי</span><b className="num">{P.dailyStreak}🔥</b></div>
       </div>
       <div className="sec-title"><h2 className="h-md">מפת הדליפות שלי</h2><span className="muted" style={{ fontSize: 12 }}>איפה אתה מפסיד נקודות</span></div>

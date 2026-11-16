@@ -16,6 +16,7 @@ export function Header() {
         <div className="top-lv">רמה {lv + 1} · {LEVEL_NAMES[lv]} · <span className="num">{P.xp.toLocaleString('he-IL')} XP</span></div>
         <div className="xpbar"><motion.i initial={{ width: 0 }} animate={{ width: `${pctv}%` }} transition={{ duration: 1, ease: 'easeOut' }} /></div>
       </div>
+      <div className="glass streak coins-pill" title="המטבעות שלך: נצברים עם כל נקודת XP ובשולחן החברים"><span aria-hidden="true">🪙</span><span className="num">{(P.coins ?? 0).toLocaleString('he-IL')}</span></div>
       {P.dailyStreak > 0 && <div className="glass streak" title="ימים ברצף באתגר היומי"><span className="fire">🔥</span><span className="num">{P.dailyStreak}</span></div>}
     </div>
   );

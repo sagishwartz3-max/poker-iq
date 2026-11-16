@@ -2,7 +2,7 @@
 // so the same code can run on the host's device today and on a server later.
 import { CAT_NAMES, evalCards, type Rng } from './cards';
 
-export interface TCfg { stack: number; levelMin: number; rebuys: number; turnSec: number }
+export interface TCfg { stack: number; levelMin: number; rebuys: number; turnSec: number; /** learning mode: helper + hand review for every player */ learn?: boolean }
 export const DEFAULT_CFG: TCfg = { stack: 2000, levelMin: 10, rebuys: 2, turnSec: 30 };
 export const BLINDS: [number, number][] = [[10, 20], [15, 30], [25, 50], [50, 100], [75, 150], [100, 200], [150, 300], [200, 400], [300, 600], [500, 1000], [1000, 2000]];
 export const MAX_SEATS = 9;

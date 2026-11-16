@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mulberry32 } from '../engine/cards';
 import { actName, grade, makeScenario, type Action, type Scenario } from '../engine/scenarios';
-import { recordSkill, rememberMistake } from '../game/progress';
+import { gain, recordSkill, rememberMistake } from '../game/progress';
 import { sfx } from '../game/sound';
 import { DUEL_CFG } from '../game/worlds';
 import { DUEL_HANDS, DUEL_SECONDS, DuelRoom, seated, type DuelMsg, type Peer } from '../net/duel';
@@ -155,7 +155,7 @@ export function Duel({ initialCode, onPlaying }: { initialCode?: string; onPlayi
     recorded.current = true;
     const won = myScore > oppScore || !opp;
     const xp = Math.round(myScore * 0.4) + (won ? 150 : 0);
-    update(p => { p.xp += xp; if (won) p.wins++; else p.losses++; });
+    update(p => { gain(p, xp); if (won) p.wins++; else p.losses++; });
     recordMatch(P, won).catch(() => {});
     track(P, 'duel_end', { won, my: myScore, opp: oppScore, host });
     sync();

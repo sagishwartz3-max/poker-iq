@@ -20,8 +20,8 @@ const STREET_TERM: Record<Street, string> = { 0: '{{preflop}}', 3: '{{flop}}', 4
 export const STREET_NAME: Record<Street, string> = { 0: 'לפני הפלופ', 3: 'פלופ', 4: 'טרן', 5: 'ריבר' };
 
 const OPEN_THR: Record<Pos, number> = { UTG: 8, HJ: 7, CO: 6, BTN: 5, SB: 6, BB: 99 };
-const RT_F = [0, 0.64, 0.48, 0.4, 0.35, 0.31];
-const RT_N = [0, 0.58, 0.42, 0.34, 0.29, 0.25];
+export const RT_F = [0, 0.64, 0.48, 0.4, 0.35, 0.31];
+export const RT_N = [0, 0.58, 0.42, 0.34, 0.29, 0.25];
 
 export interface Seat { pos: Pos; state: 'folded' | 'in' | 'hero' | 'waiting'; chips?: number; tag?: string; aggressor?: boolean }
 export interface Step { pos: Pos | 'you'; text: string; kind: 'fold' | 'call' | 'raise' | 'check' | 'street' }

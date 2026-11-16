@@ -270,3 +270,16 @@
 .vertical .psheet { scale: 1.6; width: 540px; max-width: 540px; max-height: 900px; }
 /* English labels read left to right: "Raise to 40", "½ Pot", Min … All-in */
 .praise-amt, .ppresets, .psaid, .pbubble { direction: ltr; unicode-bidi: isolate; }
+
+/* learning mode: the private helper above my buttons, and the hand review after showdown */
+.phelp { position: absolute; z-index: 21; left: 1043px; top: auto; bottom: 156px; width: 605px; display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 16px; border-radius: 18px; background: #0d1712f0; border: 1px solid #c8a96455; box-shadow: 0 10px 30px #000a;
+  font-size: 21px; line-height: 1.3; color: #e9e4d6; text-align: right; pointer-events: auto; }
+.phelp b { font-weight: 700; color: #f3dfa6; }
+.phelp span { color: #cfc8b6; }
+.phelp .term { color: #f3dfa6; border-bottom: 1px dashed #f3dfa688; cursor: pointer; }
+.phelp.review span.g { color: #8fd9a8; } .phelp.review span.c { color: #f0cf7a; } .phelp.review span.b { color: #f2a0a0; }
+.with-help .pbubble { display: none; }
+.with-help .pstatus { display: none; }
+.vertical .phelp { left: 60px; bottom: 268px; width: 820px; font-size: 25px; padding: 12px 22px; border-radius: 24px;
+  translate: 0 max(0px, calc(var(--dy) - var(--safe-b) / var(--s))); }
