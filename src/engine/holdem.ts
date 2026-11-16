@@ -11,12 +11,12 @@ export interface TP {
   id: string; nick: string; stack: number; bet: number; total: number;
   folded: boolean; allIn: boolean; acted: boolean; inHand: boolean;
   buyIns: number; gifts: number; pending: number; out: boolean; away: boolean;
-  cards?: number[];
+  cards?: number[]; actedBet?: number;
 }
 export type Phase = 'lobby' | 'hand' | 'show' | 'over';
 export interface Win { id: string; amount: number; name: string }
 export interface TS {
-  code: string; hostId: string; cfg: TCfg; phase: Phase; paused: boolean; players: TP[];
+  code: string; hostId: string; cfg: TCfg; phase: Phase; paused: boolean; pausedAt?: number; players: TP[];
   handNo: number; btn: number; street: number; board: number[]; deck: number[];
   pot: number; curBet: number; minRaise: number; turn: string | null; deadline: number;
   startedAt: number; level: number; sb: number; bb: number;
@@ -39,6 +39,9 @@ export function seat(s: TS, id: string, nick: string): TP | null {
 }
 const canAct = (p: TP) => p.inHand && !p.folded && !p.allIn;
 const alive = (s: TS) => s.players.filter(p => p.inHand && !p.folded);
+/** A short all-in does not reopen raising for someone who already acted. */
+export const mayRaise = (s: Pick<TS, 'curBet' | 'minRaise'>, p: Pick<TP, 'acted' | 'actedBet' | 'bet' | 'stack'>) =>
+  p.bet + p.stack > s.curBet && (!p.acted || p.actedBet === 0 || s.curBet - (p.actedBet ?? p.bet) >= s.minRaise);
 export const canRebuy = (s: TS, p: TP) => p.stack === 0 && !(s.phase === 'hand' && p.inHand) && (s.cfg.rebuys < 0 || p.buyIns - 1 < s.cfg.rebuys);
 export const levelEndsAt = (s: TS) => (s.cfg.levelMin > 0 && s.startedAt ? s.startedAt + (s.level + 1) * s.cfg.levelMin * 60000 : 0);
 
@@ -61,7 +64,7 @@ export function startHand(s: TS, rng: Rng, now: number): boolean {
   if (!s.startedAt) s.startedAt = now;
   if (s.cfg.levelMin > 0) s.level = Math.min(BLINDS.length - 1, Math.floor((now - s.startedAt) / (s.cfg.levelMin * 60000)));
   [s.sb, s.bb] = BLINDS[s.level];
-  for (const p of s.players) { p.bet = 0; p.total = 0; p.folded = false; p.allIn = false; p.acted = false; p.inHand = p.stack > 0 && !p.out; delete p.cards; }
+  for (const p of s.players) { p.bet = 0; p.total = 0; p.folded = false; p.allIn = false; p.acted = false; p.actedBet = 0; p.inHand = p.stack > 0 && !p.out; delete p.cards; }
   s.handNo++; s.street = 0; s.board = []; s.pot = 0; s.winners = []; s.shown = {}; s.last = null; s.phase = 'hand';
   s.btn = nextIdx(s, s.btn < 0 ? Math.floor(rng() * s.players.length) : s.btn, p => p.inHand);
   const deck: number[] = [];
@@ -81,7 +84,7 @@ export function startHand(s: TS, rng: Rng, now: number): boolean {
 }
 
 export function act(s: TS, id: string, a: TAction, now: number): boolean {
-  if (s.phase !== 'hand' || s.turn !== id) return false;
+  if (s.phase !== 'hand' || s.paused || s.turn !== id) return false;
   const p = s.players.find(x => x.id === id);
   if (!p || !canAct(p)) return false;
   const toCall = s.curBet - p.bet;
@@ -92,20 +95,23 @@ export function act(s: TS, id: string, a: TAction, now: number): boolean {
   else {
     const max = p.bet + p.stack;
     let to = Math.floor((a as { to: number }).to);
-    if (!(to > 0)) return false;
+    if (!Number.isFinite(to) || !(to > 0)) return false;
     if (to >= max) to = max;
     else if (to < s.curBet + s.minRaise) return false;
     if (to <= s.curBet) { pay(s, p, toCall); text = p.allIn ? 'אול-אין' : `קול ${toCall}`; }
     else {
+      if (!mayRaise(s, p)) return false;
       pay(s, p, to - p.bet);
-      if (to - s.curBet >= s.minRaise) s.minRaise = to - s.curBet;
+      const fullRaise = to - s.curBet >= s.minRaise;
+      if (fullRaise) s.minRaise = to - s.curBet;
       const wasBet = s.curBet;
       s.curBet = to;
-      for (const o of s.players) if (o !== p && canAct(o)) o.acted = false;
+      if (fullRaise) for (const o of s.players) if (o !== p && canAct(o)) o.acted = false;
       text = p.allIn ? `אול-אין ${to}` : wasBet === 0 ? `הימור ${to}` : `רייז ל-${to}`;
     }
   }
   p.acted = true;
+  p.actedBet = s.curBet;
   s.last = { id, text };
   progress(s, now);
   return true;
@@ -127,7 +133,7 @@ function progress(s: TS, now: number) {
     }
     if (s.street === 3) { finish(s, now, true); return; }
     s.street++;
-    for (const p of s.players) { p.bet = 0; p.acted = false; }
+    for (const p of s.players) { p.bet = 0; p.acted = false; p.actedBet = 0; }
     s.curBet = 0; s.minRaise = s.bb;
     const k = s.street === 1 ? 3 : 1;
     for (let i = 0; i < k; i++) s.board.push(s.deck.pop()!);

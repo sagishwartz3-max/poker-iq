@@ -18,8 +18,8 @@ export function Dial({ min, max, unit, value, onChange }: { min: number; max: nu
   return (
     <div className="dial">
       <div className="dial-needle" />
-      <div className="dial-track" ref={ref} dir="ltr" role="slider" aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} tabIndex={0}
-        onKeyDown={e => { if (e.key === 'ArrowRight') onChange(valOf(Math.min(n, idxOf(value) + 1))); if (e.key === 'ArrowLeft') onChange(valOf(Math.max(0, idxOf(value) - 1))); }}
+      <div className="dial-track" ref={ref} dir="ltr" role="slider" aria-label="סכום העלאה" aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} tabIndex={0}
+        onKeyDown={e => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); onChange(valOf(Math.max(0, Math.min(n, idxOf(value) + (e.key === 'ArrowRight' ? 1 : -1))))); } }}
         onScroll={e => { const i = Math.max(0, Math.min(n, Math.round((e.target as HTMLDivElement).scrollLeft / TICK))); const v = valOf(i); if (v !== value) { mine.current = true; onChange(v); } }}>
         <div className="dial-pad" />
         {Array.from({ length: n + 1 }, (_, i) => <i key={i} className={i % 5 === 0 ? 'big' : ''} style={{ width: TICK }} />)}

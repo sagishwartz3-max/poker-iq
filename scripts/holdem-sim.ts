@@ -1,5 +1,5 @@
 import { mulberry32 } from '../src/engine/cards';
-import { act, endHand, gift, newTable, rebuy, seat, startHand, canRebuy, type TS } from '../src/engine/holdem';
+import { act, endHand, gift, newTable, rebuy, seat, startHand, canRebuy, mayRaise, type TS } from '../src/engine/holdem';
 const rng = mulberry32(2026);
 let hands = 0, showdowns = 0, splits = 0, allins = 0, games = 0, maxActs = 0;
 for (let g = 0; g < 400; g++) {
@@ -21,7 +21,7 @@ for (let g = 0; g < 400; g++) {
       const toCall = s.curBet - p.bet, r = rng();
       let ok: boolean;
       if (r < 0.12 && toCall > 0) ok = act(s, p.id, { type: 'fold' }, now);
-      else if (r < 0.62) ok = act(s, p.id, toCall > 0 ? { type: 'call' } : { type: 'check' }, now);
+      else if (r < 0.62 || !mayRaise(s, p)) ok = act(s, p.id, toCall > 0 ? { type: 'call' } : { type: 'check' }, now);
       else if (r < 0.95) ok = act(s, p.id, { type: 'raise', to: s.curBet + s.minRaise + Math.floor(rng() * 4) * s.bb }, now);
       else { ok = act(s, p.id, { type: 'raise', to: 1e9 }, now); allins++; }
       if (!ok) throw new Error('legal action rejected ' + JSON.stringify({ r, toCall, cur: s.curBet, min: s.minRaise, bet: p.bet, stack: p.stack }));
