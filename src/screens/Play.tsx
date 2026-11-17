@@ -5,6 +5,7 @@ import { grade, makeScenario, type Action, type GenCfg, type Scenario } from '..
 import { dueMistakes, gain, nodeId, promoteMistake, recordSkill, rememberMistake, SKILLS, today, unlocked, yesterday } from '../game/progress';
 import { sfx } from '../game/sound';
 import { track } from '../net/supabase';
+import { maybeAskReview } from '../native';
 import { DAILY_CFG, drillCfg, HANDS_PER_ROUND, LEVEL_NAMES, levelOf, stageCfg, WORLDS } from '../game/worlds';
 import { Burst } from '../ui/Burst';
 import { useApp, type PlayArgs } from '../ui/ctx';
@@ -67,6 +68,8 @@ export function Play({ args }: { args: PlayArgs }) {
     const sec = (performance.now() - t0.current) / 1000;
     let pts = g === 'g' ? 100 : g === 'c' ? 70 : 0;
     if (args.mode === 'daily' && pts) pts += Math.max(0, Math.round(50 - 4 * sec));
+    // the aha moment: a new player's first decision and its explanation (funnel step in PostHog)
+    if (P.hands === 0) track(P, 'first_decision', { grade: g, mode: args.mode, sec: Math.round(sec) });
     setLast({ a, g, pts });
     setRes(r => { const n = [...r]; n[i] = g; return n; });
     setPoints(p => p + pts);
@@ -87,7 +90,7 @@ export function Play({ args }: { args: PlayArgs }) {
     setStreak(x => (g === 'g' ? x + 1 : 0));
     if (g === 'g') { sfx.good(); setBurst(b => b + 1); } else if (g === 'c') sfx.close(); else sfx.bad();
     setPhase('feedback');
-  }, [s, last, i, args.mode, update, res, points, sync, endless]);
+  }, [s, last, i, args.mode, update, res, points, sync, endless, P]);
 
   // per-hand clock for timed stages
   useEffect(() => {
@@ -105,7 +108,9 @@ export function Play({ args }: { args: PlayArgs }) {
         p.daily = { date: today(), score: sum, squares };
         gain(p, sum * 0.5);
       });
-      sync(); toast(`+${Math.round(sum * 0.5)} XP`); go('daily'); return;
+      sync(); toast(`+${Math.round(sum * 0.5)} XP`);
+      if (res.filter(x => x === 'g').length >= 8) maybeAskReview(P.hands);
+      go('daily'); return;
     }
     if (args.mode === 'review' || args.mode === 'drill') {
       const good = res.filter(x => x !== 'b').length;
@@ -125,6 +130,7 @@ export function Play({ args }: { args: PlayArgs }) {
     setPhase('done');
     setTimeout(() => (after > before ? sfx.level() : stars ? sfx.good() : sfx.bad()), 300);
     if (stars) setTimeout(() => setBurst(b => b + 1), 500);
+    if (stars === 3) maybeAskReview(P.hands);
   };
 
   const next = () => {

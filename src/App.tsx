@@ -4,6 +4,8 @@ import { GLOSSARY } from './engine/glossary';
 import { load, persist, type Progress } from './game/progress';
 import { setSound } from './game/sound';
 import { savePlayer, track } from './net/supabase';
+import { phCapture } from './net/posthog';
+import { native } from './native';
 import { Board } from './screens/Board';
 import { Daily } from './screens/Daily';
 import { Duel } from './screens/Duel';
@@ -42,6 +44,8 @@ export default function App() {
   const syncT = useRef<number>();
 
   useEffect(() => { setSound(P.sound); }, [P.sound]);
+  // which screens people reach: the funnel from first open to the first table (PostHog)
+  useEffect(() => { if (native.screen) void native.screen(screen); else phCapture('screen_view', { screen }); }, [screen]);
   useEffect(() => { if (urlDuel || urlTable) history.replaceState(null, '', location.pathname); }, []);
   useEffect(() => { if (P.onboarded) track(P, 'app_open', { via: urlTable ? 'table_link' : urlDuel ? 'duel_link' : 'direct', hands: P.hands, xp: P.xp }); }, [P.onboarded]); // eslint-disable-line react-hooks/exhaustive-deps
 

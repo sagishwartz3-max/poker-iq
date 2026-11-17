@@ -1,3 +1,4 @@
+import { native } from '../native';
 // Tiny synthesized sound effects (no audio files needed).
 let ctx: AudioContext | null = null;
 let enabled = true;
@@ -26,7 +27,12 @@ function noise(dur: number, gain = 0.08, delay = 0, hp = 2000) {
   const g = a.createGain(); g.gain.value = gain;
   s.connect(f).connect(g).connect(a.destination); s.start(t);
 }
-const vib = (p: number | number[]) => { try { navigator.vibrate?.(p); } catch { /* not supported */ } };
+// inside the app: real haptics (iOS web views cannot vibrate); on the web: the Vibration API where it exists
+const vib = (p: number | number[]) => {
+  if (!enabled) return;
+  if (native.haptic) { const n = Array.isArray(p) ? p.length : 1, v = Array.isArray(p) ? Math.max(...p) : p; void native.haptic(n >= 5 ? 'success' : n === 3 && v >= 40 ? 'error' : n === 3 ? 'success' : v >= 15 ? 'warning' : 'light'); return; }
+  try { navigator.vibrate?.(p); } catch { /* not supported */ }
+};
 export const sfx = {
   deal: (i = 0) => noise(0.06, 0.07, i * 0.07, 3000),
   chip: () => { tone(2400, 0.05, 'triangle', 0.06); tone(3100, 0.06, 'triangle', 0.05, 0.03); },

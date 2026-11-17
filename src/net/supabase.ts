@@ -1,10 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Progress } from '../game/progress';
 import { today } from '../game/progress';
+import { ENV } from '../env';
+import { SITE } from '../native';
+import { phCapture, phIdentify } from './posthog';
 
 // Publishable values: safe to ship inside the app. Override with VITE_SUPABASE_URL / VITE_SUPABASE_KEY.
-const URL = import.meta.env.VITE_SUPABASE_URL || 'https://xfuzuwcmvcgdkqhghgyr.supabase.co';
-const KEY = import.meta.env.VITE_SUPABASE_KEY ||
+const URL = ENV.SUPABASE_URL || 'https://xfuzuwcmvcgdkqhghgyr.supabase.co';
+const KEY = ENV.SUPABASE_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmdXp1d2NtdmNnZGtxaGdoZ3lyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNTY2MzAsImV4cCI6MjEwOTgzMjYzMH0.mdiHyXnZRIE_REypf53-KsqFPV6ia20s4uznUPUtptg';
 
 export const supabase = createClient(URL, KEY, {
@@ -12,9 +15,9 @@ export const supabase = createClient(URL, KEY, {
   realtime: { params: { eventsPerSecond: 20 } }
 });
 
-/** Address used in invite links. Inside the store apps the page origin is capacitor://, so a public URL is needed. */
-export const PUBLIC_URL: string = import.meta.env.VITE_PUBLIC_URL ||
-  (location.protocol.startsWith('http') ? location.origin + location.pathname.replace(/index\.html$/, '') : 'https://poker-iq.vercel.app/');
+/** Address used in invite links. Inside the store app the page is not served from the site, so the public URL is used. */
+export const PUBLIC_URL: string = ENV.PUBLIC_URL ||
+  (location.protocol.startsWith('http') ? location.origin + location.pathname.replace(/index\.html$/, '') : SITE + '/');
 
 export interface Row {
   id: string; nickname: string; xp: number; hands: number; correct: number;
@@ -46,7 +49,11 @@ export async function leaderboard(kind: 'xp' | 'daily' | 'wins'): Promise<Row[]>
 
 /* ---------- product analytics (for the social experiment) ---------- */
 let trackOff = false;
+let identified = '';
 export function track(p: Progress, event: string, meta: Record<string, unknown> = {}) {
+  // product analytics (PostHog): anonymous player id only, never the nickname
+  if (identified !== p.id) { identified = p.id; phIdentify(p.id, { level_xp: p.xp }); }
+  phCapture(event, meta);
   if (trackOff) return;
   supabase.rpc('poker_track', { p_id: p.id, p_event: event, p_meta: meta }).then(({ error }) => { if (error) trackOff = true; });
 }

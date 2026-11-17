@@ -16,6 +16,7 @@ import { useApp } from '../ui/ctx';
 import { Rich } from '../ui/Rich';
 import { I } from '../ui/Icons';
 import { shareLinks } from './Duel';
+import { asset } from '../native';
 
 const rnd = () => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
 const saveKey = (code: string) => `pokeriq-table-${code}`;
@@ -418,7 +419,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   return (
     <RoomStage onLayout={setTall} label={practice ? 'שולחן אימון מול בוטים' : 'שולחן פוקר לחברים'}>{() => (<>
       <div className="lounge" aria-hidden="true" />
-      <img className="room-dealer" src="/table/dealer.webp" alt="" aria-hidden="true" />
+      <img className="room-dealer" src={asset('/table/dealer.webp')} alt="" aria-hidden="true" />
       <div className="pro-top">
         <button className="pro-round room-back" onClick={leave} aria-label="יציאה">{I.back}</button>
         <div className="room-title"><b>שולחן חברים</b><button onClick={() => practice ? toast('שולחן אימון — הבוטים אינם שחקנים אמיתיים') : sh.copy().then(ok => toast(ok ? 'ההזמנה הועתקה' : link))}>{practice ? 'אימון מול בוטים' : `קוד ${code} · העתק הזמנה`}{learn ? ' · מצב לימוד' : ''}</button></div>
@@ -465,7 +466,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
                 {shown && !isMe && <div className={`pshown ${resolved ? (won ? 'win' : 'lose') : ''}`}>{shown.map((c, k) => <MiniCard key={k} c={c} size={28} delay={k * 0.1} hl={hlOf(c)} />)}
                   {resolved && sh && <em className="phand">{sh.name}</em>}</div>}
                 <div className="pavatar" style={{ '--h': `${(p.nick.charCodeAt(0) * 47) % 360}` } as React.CSSProperties}>
-                  <img src={`/table/${avatar}.webp`} alt="" aria-hidden="true" />
+                  <img src={asset(`/table/${avatar}.webp`)} alt="" aria-hidden="true" />
                   {turn && <svg className="pring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" pathLength="100" strokeDasharray={`${Math.min(100, (left / turnSecs(V.cfg)) * 100)} 100`} /></svg>}
                   {turn && <b className="psec num">{Math.ceil(left)}</b>}
                 </div>

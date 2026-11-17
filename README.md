@@ -23,7 +23,8 @@
 ## טכנולוגיה
 - React + TypeScript + Vite, אנימציות עם framer-motion.
 - Supabase: טבלת `poker_players` (הדירוג) ופונקציות `poker_save_player` / `poker_record_match`. חדרי ראש בראש עובדים על Supabase Realtime (broadcast + presence).
-- Capacitor: עוטף את המשחק לאפליקציה לאייפון (`ios/`) ולאנדרואיד (`android/`).
+- אפליקציה: React Native + Expo בתיקייה `mobile/`. המשחק עצמו (אותו קוד של האתר, `src/`) רץ בתוכה כ-Expo DOM Component, וניתוח, רטט, קישורים ובקשת דירוג עובדים נייטיב.
+- ניתוח מוצר: PostHog (באתר `posthog-js`, באפליקציה `posthog-react-native`). בלי מפתח לא נשלח כלום.
 
 ## הרצה מקומית
 ```bash
@@ -39,15 +40,22 @@ npm run build      # בונה את dist/
 ## העלאה לחנויות
 **חשבונות שצריך:** Apple Developer (‏99$ לשנה) ו-Google Play Console (‏25$ חד-פעמי).
 
-לפני ההעלאה הראשונה, משנים את `appId` ב-`capacitor.config.ts` (כרגע `com.pokeriq.app`) למזהה ייחודי משלך.
-
+האפליקציה נבנית עם Expo ו-EAS (בענן, בלי Xcode או Android Studio):
 ```bash
-npm run build && npx cap sync      # מעתיק את המשחק לפרויקטים של iOS ו-Android
+cd mobile
+npm install
+cp .env.example .env            # מפתח PostHog (ובהמשך RevenueCat)
+npx expo start                  # הרצה בטלפון עם Expo Go (סורקים QR)
+npx eas-cli@latest login        # חשבון Expo חינמי
+npx eas-cli@latest build --profile preview --platform android   # APK להתקנה ישירה
+npx eas-cli@latest build --profile production --platform all    # לחנויות
+npx eas-cli@latest submit --platform ios                        # העלאה ל-App Store Connect
 ```
+- מזהה האפליקציה: `com.pokeriq.app` (ב-`mobile/app.json`). כדאי לשנות למזהה ייחודי משלך לפני ההעלאה הראשונה.
+- המשחק נבנה מתוך `src/` המשותף. כל שינוי במשחק מגיע גם לאתר וגם לאפליקציה.
+- בדיקת בנייה בלי מכשיר: `cd mobile && npm run export:check`.
 
-- **Android:** פותחים את `android/` ב-Android Studio ← Build ← Generate Signed Bundle ← מעלים את ה-‎.aab ל-Play Console.
-- **iOS עם Mac:** מריצים `npx cap open ios`, ב-Xcode בוחרים Team ← Product ← Archive ← מעלים ל-App Store Connect.
-- **iOS בלי Mac:** שירות ענן כמו Codemagic בונה ומעלה מהריפו (צריך לחבר את חשבון ה-Apple Developer).
+**תשלומים (בהמשך): RevenueCat.** נקודת החיבור מוכנה ב-`mobile/src/purchases.ts`. מנויים בלבד: **אסור למכור מטבעות משחק**, כי עם שולחנות דמי כניסה במטבעות זה יסווג כהימורים.
 
 **מדיניות החנויות:** משחקי פוקר בלי כסף אמיתי מותרים, אבל מסווגים כ"הימורים מדומים". באפל הדירוג יהיה כנראה ‎17+‎, ובגוגל צריך לסמן את זה בשאלון התוכן. אסור להוסיף אפשרות לזכות או לקנות כסף אמיתי.
 
@@ -58,7 +66,9 @@ npm run build && npx cap sync      # מעתיק את המשחק לפרויקטי
 3. אופציונלי: `OPENROUTER_MODEL` (כל מזהה מודל של OpenRouter; ברירת המחדל בקוד היא `google/gemini-2.5-flash`, כדאי לוודא שהוא זמין בחשבון), ו-`COACH_DAILY_LIMIT` (שאלות ליום לשחקן, ברירת מחדל 15).
 
 ## מדידה לניסוי החברתי
-כל האירועים נשמרים בטבלה `poker_events`: כניסה, הרשמה, סיום שלב, אתגר יומי, קרבות ושאלות למאמן. רשימת ההמתנה ל-Pro, כולל המחיר שכל שחקן ראה, נשמרת ב-`poker_waitlist`. שאילתות שימושיות:
+**PostHog:** באתר מגדירים ב-Vercel את `VITE_POSTHOG_KEY` (ואופציונלית `VITE_POSTHOG_HOST`), ובאפליקציה את `EXPO_PUBLIC_POSTHOG_KEY` ב-`mobile/.env`. האירועים המרכזיים למשפך: `onboard` ← `first_decision` (רגע ה-Aha: ההחלטה הראשונה וההסבר שלה) ← `stage_done` ← `daily_done` ← `table_enter` / `duel_start`, וגם `screen_view` לכל מסך. מזוהה רק המזהה האקראי של השחקן, אף פעם לא הכינוי.
+
+בנוסף, כל האירועים נשמרים בטבלה `poker_events`: כניסה, הרשמה, סיום שלב, אתגר יומי, קרבות ושאלות למאמן. רשימת ההמתנה ל-Pro, כולל המחיר שכל שחקן ראה, נשמרת ב-`poker_waitlist`. שאילתות שימושיות:
 ```sql
 -- כמה שחקנים חזרו ביום אחר מהיום הראשון שלהם
 select count(*) from (select player_id, count(distinct created_at::date) d from poker_events where event='app_open' group by 1) x where d > 1;

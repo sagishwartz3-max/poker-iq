@@ -5,7 +5,7 @@ import { useApp } from '../ui/ctx';
 import { track } from '../net/supabase';
 
 export function Onboarding() {
-  const { P, update, sync } = useApp();
+  const { P, update, sync, go } = useApp();
   const [nick, setNick] = useState('');
   const cards = [8 * 4, 9 * 4 + 1, 10 * 4 + 2, 11 * 4 + 3, 12 * 4];
   return (
@@ -30,7 +30,7 @@ export function Onboarding() {
             <label htmlFor="onbNick">איך יקראו לך בשולחן?</label>
             <input id="onbNick" className="input" maxLength={18} value={nick} onChange={e => setNick(e.target.value)} placeholder="הכינוי שלך" autoComplete="nickname" />
           </div>
-          <button className="btn gold wide" disabled={!nick.trim()} onClick={() => { update(p => { p.nick = nick.trim().slice(0, 18); p.onboarded = true; }); setTimeout(sync, 50); let ref = ''; try { ref = document.referrer ? new URL(document.referrer).hostname : ''; } catch { /* odd referrer */ } track(P, 'onboard', { ref }); }}>בוא נתחיל</button>
+          <button className="btn gold wide" disabled={!nick.trim()} onClick={() => { update(p => { p.nick = nick.trim().slice(0, 18); p.onboarded = true; }); setTimeout(sync, 50); let ref = ''; try { ref = document.referrer ? new URL(document.referrer).hostname : ''; } catch { /* odd referrer */ } track(P, 'onboard', { ref }); go('play', { mode: 'stage', w: 0, l: 0 }); }}>בוא נתחיל</button>
           <p className="muted" style={{ fontSize: 12, margin: '10px 0 0' }}>לגילאי 18+. משחק אימון בלי כסף אמיתי. <a href="./privacy.html" target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>פרטיות ותנאים</a></p>
         </motion.div>
       </div>
