@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { best5, mulberry32, RN, scoreName } from '../src/engine/cards';
-import { act, DEFAULT_CFG, endHand, gift, mayRaise, newTable, publicView, seat, showTimes, startHand, timeoutAction } from '../src/engine/holdem';
+import { act, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, payIn, prizes, publicView, seat, showTimes, startHand, timeoutAction } from '../src/engine/holdem';
 
 const s = newTable('TEST', 'a', { ...DEFAULT_CFG, rebuys: 0 });
 for (const id of ['a','b','c']) seat(s, id, id);
@@ -74,4 +74,32 @@ console.log('OK: privacy, invalid actions, pause, short all-in reopening, heads-
   assert(tm.cardAt(0) > 0 && tm.cardAt(3) > tm.cardAt(2) && tm.cardAt(4) > tm.cardAt(3) && tm.resolveAt > tm.cardAt(4));
   assert.equal(t.nextAt, 1200 + tm.endAt * 1000);
   console.log('OK: showdown names, best five, staged run-out');
+}
+
+// Buy-in tournament: unpaid players watch, no rebuys or gifts, places by bust order, prizes add up to the entries.
+{
+  const t = newTable('B', 'a', { ...DEFAULT_CFG, rebuys: 2, buyIn: 100 });
+  for (const id of ['a', 'b', 'c', 'd', 'e']) seat(t, id, id);
+  assert(t.players.every(p => p.out && !p.paid));
+  assert(!startHand(t, mulberry32(1), 1000));
+  for (const id of ['a', 'b', 'c', 'd', 'e']) assert(payIn(t, id, true));
+  assert(payIn(t, 'e', false) && t.players[4].out);
+  assert(payIn(t, 'e', true));
+  assert(!gift(t, 'a', 500));
+  let now = 1000, guard = 0;
+  while (t.phase !== 'over' && guard++ < 3000) {
+    if (t.phase === 'lobby' || t.phase === 'show') { if (t.phase === 'show') endHand(t); if (t.phase === 'lobby') assert(startHand(t, mulberry32(guard), now)); continue; }
+    const p = t.players.find(x => x.id === t.turn)!;
+    const r = mulberry32(guard * 7)();
+    act(t, p.id, r < 0.3 && mayRaise(t, p) ? { type: 'raise', to: p.bet + p.stack } : timeoutAction(t).type === 'check' ? { type: 'check' } : { type: 'call' }, now += 10);
+  }
+  assert.equal(t.phase, 'over');
+  assert(!payIn(t, 'a', false));
+  assert(t.players.every(p => !canRebuy(t, p)));
+  const pr = prizes(t);
+  assert.equal(pr.length, 2); assert.equal(pr.reduce((a, x) => a + x.amount, 0), 500);
+  assert.equal(pr[0].id, t.players.find(p => p.stack > 0)!.id);
+  const second = t.players.filter(p => p.stack === 0).sort((a, b) => b.bust! - a.bust!)[0];
+  assert.equal(pr[1].id, second.id);
+  console.log('OK: buy-in tournament entries, no rebuys or gifts, prize places');
 }

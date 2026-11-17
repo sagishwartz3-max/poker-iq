@@ -31,6 +31,7 @@ export function Onboarding() {
             <input id="onbNick" className="input" maxLength={18} value={nick} onChange={e => setNick(e.target.value)} placeholder="הכינוי שלך" autoComplete="nickname" />
           </div>
           <button className="btn gold wide" disabled={!nick.trim()} onClick={() => { update(p => { p.nick = nick.trim().slice(0, 18); p.onboarded = true; }); setTimeout(sync, 50); let ref = ''; try { ref = document.referrer ? new URL(document.referrer).hostname : ''; } catch { /* odd referrer */ } track(P, 'onboard', { ref }); }}>בוא נתחיל</button>
+          <p className="muted" style={{ fontSize: 12, margin: '10px 0 0' }}>לגילאי 18+. משחק אימון בלי כסף אמיתי. <a href="./privacy.html" target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>פרטיות ותנאים</a></p>
         </motion.div>
       </div>
     </div>

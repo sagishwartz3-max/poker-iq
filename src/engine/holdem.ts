@@ -2,7 +2,8 @@
 // so the same code can run on the host's device today and on a server later.
 import { best5, scoreName, type Rng } from './cards';
 
-export interface TCfg { stack: number; levelMin: number; rebuys: number; turnSec: number; /** learning mode: helper + hand review for every player */ learn?: boolean }
+export interface TCfg { stack: number; levelMin: number; rebuys: number; turnSec: number; /** learning mode: helper + hand review for every player */ learn?: boolean;
+  /** tournament entry in game coins (0 = free table): no rebuys, no gifts, prizes from the entries */ buyIn?: number }
 export const DEFAULT_CFG: TCfg = { stack: 2000, levelMin: 10, rebuys: 2, turnSec: 30 };
 /** Seconds per turn: learning mode adds 15 so there is time to think the question through. */
 export const turnSecs = (cfg: TCfg) => cfg.turnSec + (cfg.learn ? 15 : 0);
@@ -14,6 +15,8 @@ export interface TP {
   folded: boolean; allIn: boolean; acted: boolean; inHand: boolean;
   buyIns: number; gifts: number; pending: number; out: boolean; away: boolean;
   cards?: number[]; actedBet?: number;
+  /** buy-in tables: entered (paid) and the hand number they were knocked out in */
+  paid?: boolean; bust?: number;
 }
 export type Phase = 'lobby' | 'hand' | 'show' | 'over';
 export interface Win { id: string; amount: number; name: string }
@@ -48,6 +51,8 @@ export function seat(s: TS, id: string, nick: string): TP | null {
   if (ex) { ex.nick = nick; ex.away = false; return ex; }
   if (s.players.length >= MAX_SEATS || s.phase === 'over') return null;
   const p: TP = { id, nick, stack: s.cfg.stack, bet: 0, total: 0, folded: false, allIn: false, acted: false, inHand: false, buyIns: 1, gifts: 0, pending: 0, out: false, away: false };
+  // a buy-in table seats you as a spectator until you pay the entry
+  if (s.cfg.buyIn) { p.out = true; p.paid = false; }
   s.players.push(p);
   return p;
 }
@@ -56,7 +61,7 @@ const alive = (s: TS) => s.players.filter(p => p.inHand && !p.folded);
 /** A short all-in does not reopen raising for someone who already acted. */
 export const mayRaise = (s: Pick<TS, 'curBet' | 'minRaise'>, p: Pick<TP, 'acted' | 'actedBet' | 'bet' | 'stack'>) =>
   p.bet + p.stack > s.curBet && (!p.acted || p.actedBet === 0 || s.curBet - (p.actedBet ?? p.bet) >= s.minRaise);
-export const canRebuy = (s: TS, p: TP) => p.stack === 0 && !(s.phase === 'hand' && p.inHand) && (s.cfg.rebuys < 0 || p.buyIns - 1 < s.cfg.rebuys);
+export const canRebuy = (s: TS, p: TP) => !s.cfg.buyIn && p.stack === 0 && !(s.phase === 'hand' && p.inHand) && (s.cfg.rebuys < 0 || p.buyIns - 1 < s.cfg.rebuys);
 export const levelEndsAt = (s: TS) => (s.cfg.levelMin > 0 && s.startedAt ? s.startedAt + (s.level + 1) * s.cfg.levelMin * 60000 : 0);
 
 function pay(s: TS, p: TP, amt: number) {
@@ -198,7 +203,7 @@ function finish(s: TS, now: number, showdown: boolean, b0: number) {
 
 /** After the showdown pause: mark busted players and decide whether the game goes on. */
 export function endHand(s: TS) {
-  for (const p of s.players) { p.inHand = false; p.bet = 0; if (p.stack === 0 && !p.pending && !canRebuy(s, p)) p.out = true; }
+  for (const p of s.players) { p.inHand = false; p.bet = 0; if (p.stack === 0 && !p.pending && !canRebuy(s, p) && !p.out) { p.out = true; p.bust = s.handNo; } }
   s.phase = 'lobby';
   const stillIn = s.players.filter(p => !p.out);
   if (s.handNo > 0 && stillIn.length <= 1) s.phase = 'over';
@@ -213,7 +218,7 @@ export function rebuy(s: TS, id: string): boolean {
 /** The manager hands out extra chips. Mid-hand they wait until the hand is over. */
 export function gift(s: TS, id: string, amount: number): boolean {
   const p = s.players.find(x => x.id === id);
-  if (!p || !(amount > 0) || amount > 1e7) return false;
+  if (!p || !(amount > 0) || amount > 1e7 || s.cfg.buyIn) return false;
   amount = Math.floor(amount);
   if (s.phase === 'hand' && p.inHand) p.pending += amount; else { p.stack += amount; p.gifts += amount; }
   p.out = false;
@@ -231,4 +236,24 @@ export interface View extends Omit<TS, 'deck' | 'players'> { players: PV[]; leve
 export function publicView(s: TS, now: number): View {
   const { deck: _deck, players, ...rest } = s;
   return { ...rest, at: now, levelEnds: levelEndsAt(s), players: players.map(({ cards: _c, ...p }) => ({ ...p, has: p.inHand && !p.folded })) };
+}
+
+/** Buy-in tables: enter (or leave) before the first hand. */
+export function payIn(s: TS, id: string, on: boolean): boolean {
+  const p = s.players.find(x => x.id === id);
+  if (!p || !s.cfg.buyIn || s.handNo > 0 || s.phase !== 'lobby') return false;
+  p.paid = on; p.out = !on;
+  return true;
+}
+/** Final places and coin prizes of a buy-in table: 1 paid place up to 4 entries, 2 up to 6, 3 from 7. */
+export function prizes(s: TS): { id: string; place: number; amount: number }[] {
+  const ent = s.players.filter(p => p.paid);
+  if (!s.cfg.buyIn || ent.length < 2) return [];
+  const pool = s.cfg.buyIn * ent.length;
+  const split = ent.length <= 4 ? [1] : ent.length <= 6 ? [0.7, 0.3] : [0.5, 0.3, 0.2];
+  // still in beats knocked out; among the knocked out, later beats earlier
+  const order = [...ent].sort((a, b) => b.stack - a.stack || (b.bust ?? 1e9) - (a.bust ?? 1e9));
+  const out = split.map((f, i) => ({ id: order[i].id, place: i + 1, amount: Math.floor(pool * f) }));
+  out[0].amount += pool - out.reduce((t, x) => t + x.amount, 0);
+  return out;
 }

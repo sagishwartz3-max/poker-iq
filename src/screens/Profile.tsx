@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { blank, leaks } from '../game/progress';
 import { LEVEL_NAMES, levelOf } from '../game/worlds';
-import { PUBLIC_URL } from '../net/supabase';
+import { deletePlayer, PUBLIC_URL } from '../net/supabase';
 import { useApp } from '../ui/ctx';
 import { I } from '../ui/Icons';
 import { shareLinks } from './Duel';
@@ -11,6 +11,8 @@ export function Profile() {
   const { P, update, toast, sync, go } = useApp();
   const [nick, setNick] = useState(P.nick);
   const [arm, setArm] = useState(false);
+  const [del, setDel] = useState(false);
+  const [delBusy, setDelBusy] = useState(false);
   const lv = levelOf(P.xp);
   const stars = Object.values(P.stars).reduce((a, b) => a + b, 0);
   const sh = shareLinks('🃏 מצאתי משחק שמלמד לקבל החלטות פוקר כמו מקצוען. בוא נראה מי יותר טוב:', PUBLIC_URL);
@@ -70,10 +72,19 @@ export function Profile() {
         <span className="muted" style={{ fontSize: 13.5 }}>ההתקדמות נשמרת במכשיר ובדירוג. התחברות עם Google או Apple, כדי להעביר אותה בין מכשירים, תגיע בעדכון הבא.</span>
       </div>
       <button className="glass list-btn" style={{ color: arm ? 'var(--bad)' : 'var(--text-2)' }}
-        onClick={() => { if (!arm) { setArm(true); setTimeout(() => setArm(false), 4000); return; } update(p => { Object.assign(p, blank(), { id: p.id, secret: p.secret, nick: p.nick, onboarded: true }); }); sync(); setArm(false); toast('ההתקדמות אופסה'); }}>
+        onClick={() => { if (!arm) { setArm(true); setTimeout(() => setArm(false), 4000); return; } update(p => { Object.assign(p, blank(), { id: p.id, secret: p.secret, nick: p.nick, onboarded: true, coins: p.coins, wheel: p.wheel }); }); sync(); setArm(false); toast('ההתקדמות אופסה'); }}>
         <span>{arm ? 'בטוח? לחץ שוב כדי למחוק הכול' : 'איפוס התקדמות'}</span>
       </button>
-      <p className="muted" style={{ fontSize: 12, textAlign: 'center', marginTop: 18 }}>Poker IQ הוא משחק אימון. אין בו כסף אמיתי ואין בו הימורים.</p>
+      <button className="glass list-btn" style={{ color: del ? 'var(--bad)' : 'var(--text-2)' }} disabled={delBusy}
+        onClick={async () => {
+          if (!del) { setDel(true); setTimeout(() => setDel(false), 5000); return; }
+          setDelBusy(true);
+          try { await deletePlayer(P); try { localStorage.clear(); } catch { /* storage off */ } location.replace(location.pathname); }
+          catch { setDelBusy(false); toast('אין חיבור לשרת. נסה שוב כשיש אינטרנט.'); }
+        }}>
+        <span>{del ? 'למחוק לצמיתות את החשבון, ההתקדמות והמטבעות? לחץ שוב' : 'מחיקת החשבון'}</span>
+      </button>
+      <p className="muted" style={{ fontSize: 12, textAlign: 'center', marginTop: 18 }}>Poker IQ הוא משחק אימון לגילאי 18 ומעלה. אין בו כסף אמיתי: מטבעות המשחק אי אפשר לקנות, למכור או לפדות.<br /><a href="./privacy.html" target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>מדיניות פרטיות ותנאי שימוש</a></p>
     </div>
   );
 }

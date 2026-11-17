@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isRed, madeHand, RN, SUITS } from '../engine/cards';
-import { act, BLINDS, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, publicView, rebuy, seat, showTimes, startHand, timeoutAction, turnSecs, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
+import { act, BLINDS, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, payIn, prizes, publicView, rebuy, seat, showTimes, startHand, timeoutAction, turnSecs, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
 import { answerText, gradeTable, reviewText, spotLesson, tableAdvice, thinkText, type TGrade } from '../engine/coach';
 import { gain, SKILLS, TABLE_XP_DAY, today } from '../game/progress';
 import { sfx } from '../game/sound';
@@ -96,6 +96,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     if (c.t === 'hello') { net.current?.sendState(publicView(s, Date.now())); const p = s.players.find(x => x.id === from); if (p?.cards && s.phase !== 'lobby') net.current?.sendCards(from, s.handNo, p.cards); return; }
     if (c.t === 'act' && c.hand === s.handNo && !s.paused && act(s, from, c.a, Date.now())) commit();
     if (c.t === 'rebuy' && rebuy(s, from)) commit();
+    if ((c.t === 'pay' || c.t === 'unpay') && payIn(s, from, c.t === 'pay')) commit();
   }, [commit]);
 
   // the host's game loop
@@ -234,11 +235,33 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     if (isHost) { const s = S.current!; if (act(s, P.id, a, Date.now())) commit(); }
     else net.current?.sendCmd({ t: 'act', hand: V!.handNo, a });
   };
+  const buyIn = V?.cfg.buyIn ?? 0;
+  const doPay = (on: boolean) => {
+    if (on && (P.coins ?? 0) < buyIn) { toast('אין לך מספיק מטבעות לדמי הכניסה'); return; }
+    if (isHost) { if (payIn(S.current!, P.id, on)) commit(); } else net.current?.sendCmd({ t: on ? 'pay' : 'unpay' });
+  };
+  // the entry leaves the wallet once, when the first hand is dealt; prizes arrive once, when the game is over
+  const gameId = V ? `${V.code}-${V.startedAt}` : '';
+  useEffect(() => {
+    if (!V || !buyIn || !V.startedAt || !me?.paid) return;
+    const k = `pokeriq-buyin-${gameId}`;
+    try { if (localStorage.getItem(k)) return; localStorage.setItem(k, '1'); } catch { return; }
+    update(p => { p.coins = Math.max(0, (p.coins ?? 0) - buyIn); }); sync();
+    toast(`שילמת ${fmt(buyIn)} מטבעות דמי כניסה. בהצלחה!`);
+  }, [gameId, me?.paid]); // eslint-disable-line react-hooks/exhaustive-deps
+  const myPrize = V?.phase === 'over' ? prizes(V as unknown as TS).find(x => x.id === P.id) : undefined;
+  useEffect(() => {
+    if (!myPrize || !V) return;
+    const k = `pokeriq-prize-${gameId}`;
+    try { if (localStorage.getItem(k) || !localStorage.getItem(`pokeriq-buyin-${gameId}`)) return; localStorage.setItem(k, '1'); } catch { return; }
+    update(p => { p.coins = (p.coins ?? 0) + myPrize.amount; }); sync();
+    sfx.good(); setBurst(b => b + 1);
+  }, [gameId, myPrize?.amount]); // eslint-disable-line react-hooks/exhaustive-deps
   const doRebuy = () => { if (isHost) { if (rebuy(S.current!, P.id)) commit(); } else net.current?.sendCmd({ t: 'rebuy' }); };
   const emoji = (e: string) => { net.current?.sendCmd({ t: 'emoji', e }); setBubbles(b => ({ ...b, [P.id]: { e, k: Date.now() } })); };
   const leave = () => { net.current?.leave(); net.current = null; S.current = null; setCode(''); setV(null); setMenu(false); setPractice(false); };
   const train = () => {
-    const s = newTable('TRAIN', P.id, cfg);
+    const s = newTable('TRAIN', P.id, { ...cfg, buyIn: 0 });
     seat(s, P.id, P.nick || 'אני');
     ['נועם · בוט', 'מיה · בוט', 'אורי · בוט', 'דניאל · בוט', 'עומר · בוט'].forEach((nick, i) => seat(s, `bot-${i}`, nick));
     S.current = s; setPractice(true); setIsHost(true); setCode('TRAIN'); setPeers([]); setLog([]); setEarned(0); setFb(null);
@@ -258,13 +281,15 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
       {lastHost && <button className="glass list-btn" onClick={() => enter(lastHost)}><span>חזרה לשולחן שפתחתי ({lastHost})</span><span style={{ width: 20 }}>{I.back}</span></button>}
       <motion.div className="glass" style={{ padding: 18, borderRadius: 24, marginBottom: 14 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         <h3 className="h-md" style={{ marginBottom: 12 }}>פתח שולחן (אתה המנהל)</h3>
-        <Opt label="מצב משחק" value={gameMode} set={mode => { setGameMode(mode); setCfg(c => ({ ...c, levelMin: mode === 'טורבו' ? 5 : mode === 'טורניר' ? 10 : 0, rebuys: mode === 'טורניר' ? 0 : 2, turnSec: mode === 'טורבו' ? 20 : 30 })); }} opts={[['רגיל', 'רגיל'], ['טורבו', 'טורבו'], ['טורניר', 'טורניר']]} />
+        <Opt label="מצב משחק" value={gameMode} set={mode => { setGameMode(mode); setCfg(c => ({ ...c, levelMin: mode === 'טורבו' ? 5 : mode === 'טורניר' ? 10 : 0, rebuys: mode === 'טורניר' || c.buyIn ? 0 : 2, turnSec: mode === 'טורבו' ? 20 : 30 })); }} opts={[['רגיל', 'רגיל'], ['טורבו', 'טורבו'], ['טורניר', 'טורניר']]} />
         <Opt label="ז׳יטונים לכל שחקן" value={cfg.stack} set={v => setCfg({ ...cfg, stack: v })} opts={[[1000, '1,000'], [2000, '2,000'], [5000, '5,000'], [10000, '10,000']]} />
         <Opt label="הבליינדים עולים כל" value={cfg.levelMin} set={v => setCfg({ ...cfg, levelMin: v })} opts={[[0, 'לא עולים'], [5, '5 דק׳'], [10, '10 דק׳'], [15, '15 דק׳'], [20, '20 דק׳']]} />
-        <Opt label="כמה ריביי מותר לכל שחקן" value={cfg.rebuys} set={v => setCfg({ ...cfg, rebuys: v })} opts={[[0, 'בלי'], [1, '1'], [2, '2'], [3, '3'], [-1, 'בלי הגבלה']]} />
-        <Opt label="מצב לימוד (לכל השחקנים)" value={!!cfg.learn} set={v => setCfg({ ...cfg, learn: v })} opts={[[true, 'פועל: עוזר אישי וסיכום יד'], [false, 'כבוי']]} />
+        {!cfg.buyIn && <Opt label="כמה ריביי מותר לכל שחקן" value={cfg.rebuys} set={v => setCfg({ ...cfg, rebuys: v })} opts={[[0, 'בלי'], [1, '1'], [2, '2'], [3, '3'], [-1, 'בלי הגבלה']]} />}
+        <Opt label="דמי כניסה במטבעות (הזוכים לוקחים את הקופה)" value={cfg.buyIn ?? 0} set={v => setCfg(c => ({ ...c, buyIn: v, rebuys: v ? 0 : c.rebuys }))} opts={[[0, 'בלי'], [100, '100'], [250, '250'], [500, '500'], [1000, '1,000']]} />
+        {!!cfg.buyIn && <p className="muted" style={{ fontSize: 12, margin: '-6px 0 10px' }}>כל שחקן משלם {fmt(cfg.buyIn)} מטבעות מהארנק כשהמשחק מתחיל. בלי ריביי ובלי מתנות. עד 4 שחקנים: הזוכה לוקח הכול · 5-6: 70/30 · 7+: 50/30/20. מטבעות משחק בלבד, בלי כסף אמיתי.</p>}
+        <Opt label="מצב לימוד (לכל השחקנים)" value={!!cfg.learn} set={v => setCfg({ ...cfg, learn: v })} opts={[[true, 'פועל: מאמן עם שאלות, שיעורים ומשוב'], [false, 'כבוי']]} />
         <Opt label="זמן לכל תור" value={cfg.turnSec} set={v => setCfg({ ...cfg, turnSec: v })} opts={[[20, '20 שנ׳'], [30, '30 שנ׳'], [45, '45 שנ׳'], [60, 'דקה']]} />
-        <button className="btn gold wide" disabled={busy} onClick={() => enter(null)}>פתח שולחן</button>
+        <button className="btn gold wide" disabled={busy || (cfg.buyIn ?? 0) > (P.coins ?? 0)} onClick={() => enter(null)}>{(cfg.buyIn ?? 0) > (P.coins ?? 0) ? 'אין לך מספיק מטבעות לדמי הכניסה' : 'פתח שולחן'}</button>
       </motion.div>
       <div className="glass" style={{ padding: 18, borderRadius: 24 }}>
         <h3 className="h-md">הצטרפות לשולחן</h3>
@@ -295,7 +320,9 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     for (const x of log) for (const k of x.skills) { const v = (m[k] ||= { n: 0, good: 0 }); v.n++; if (x.g !== 'b') v.good++; }
     return Object.entries(m).filter(([k, v]) => SKILLS[k] && v.n >= 2 && v.good / v.n < 0.85).map(([key, v]) => ({ key, ...v })).sort((a, b) => a.good / a.n - b.good / b.n)[0];
   })();
-  const standings = [...V.players].sort((a, b) => b.stack - a.stack);
+  // final order: chips, then who lasted longer; spectators of a buy-in table are not in it
+  const standings = V.players.filter(p => !buyIn || p.paid).sort((a, b) => b.stack - a.stack || (b.bust ?? 1e9) - (a.bust ?? 1e9));
+  const ready = buyIn ? V.players.filter(p => p.paid).length : V.players.length;
   const net$ = (p: PV) => p.stack + p.pending - p.buyIns * V.cfg.stack - p.gifts;
 
   /* ---------------- waiting room / final table ---------------- */
@@ -309,13 +336,23 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         <motion.div className="glass" style={{ padding: 18, textAlign: 'center', borderRadius: 26, marginBottom: 14 }} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
           <div className="eyebrow">קוד השולחן</div>
           <div className="room-code shine">{code}</div>
-          <p className="muted" style={{ fontSize: 13 }}>{fmt(V.cfg.stack)} ז׳יטונים · בליינדים {BLINDS[0][0]}/{BLINDS[0][1]}{V.cfg.levelMin ? ` · עולים כל ${V.cfg.levelMin} דק׳` : ''} · ריביי: {V.cfg.rebuys < 0 ? 'בלי הגבלה' : V.cfg.rebuys || 'בלי'}</p>
+          <p className="muted" style={{ fontSize: 13 }}>{fmt(V.cfg.stack)} ז׳יטונים · בליינדים {BLINDS[0][0]}/{BLINDS[0][1]}{V.cfg.levelMin ? ` · עולים כל ${V.cfg.levelMin} דק׳` : ''} · {buyIn ? `דמי כניסה ${fmt(buyIn)} מטבעות` : `ריביי: ${V.cfg.rebuys < 0 ? 'בלי הגבלה' : V.cfg.rebuys || 'בלי'}`}</p>
           <div className="share-row">
             <a className="btn wa" href={sh.wa} target="_blank" rel="noreferrer">{I.wa} וואטסאפ</a>
             <button className="btn" onClick={async () => ((await sh.copy()) ? toast('הקישור הועתק') : toast(link))}>{I.copy} העתק קישור</button>
           </div>
         </motion.div>
       )}
+      {V.phase !== 'over' && buyIn > 0 && me && (
+        <div className="glass" style={{ padding: 16, borderRadius: 22, marginBottom: 14, textAlign: 'center' }}>
+          <h3 className="h-md" style={{ marginBottom: 4 }}>קופת פרסים: <span className="gold-text num">{fmt(buyIn * V.players.filter(p => p.paid).length)}</span> מטבעות</h3>
+          <p className="muted" style={{ margin: '0 0 10px', fontSize: 13 }}>דמי כניסה {fmt(buyIn)} · יש לך {fmt(P.coins ?? 0)} · המטבעות יורדים כשהיד הראשונה מחולקת</p>
+          {me.paid
+            ? <><b style={{ color: 'var(--good)' }}>✓ אתה בפנים</b> <button className="btn" style={{ marginInlineStart: 10 }} onClick={() => doPay(false)}>בטל</button></>
+            : <button className="btn gold wide" disabled={(P.coins ?? 0) < buyIn} onClick={() => doPay(true)}>{(P.coins ?? 0) < buyIn ? 'אין לך מספיק מטבעות' : `אני בפנים · ${fmt(buyIn)} מטבעות`}</button>}
+        </div>
+      )}
+      {V.phase === 'over' && myPrize && <div className="glass" style={{ padding: 14, borderRadius: 22, marginBottom: 12, textAlign: 'center' }}><b className="gold-text">מקום {myPrize.place}: זכית ב-{fmt(myPrize.amount)} מטבעות 🪙</b></div>}
       {V.phase === 'over' && <div style={{ textAlign: 'center' }}><div className="trophy">🏆</div><h1 className="h-xl" style={{ marginBottom: 14 }}>{standings[0]?.nick} ניצח!</h1></div>}
       {V.phase === 'over' && log.length > 0 && (
         <div className="glass" style={{ padding: 16, borderRadius: 22, marginBottom: 14 }}>
@@ -335,13 +372,13 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
             <span className={`rank ${V.phase === 'over' && k < 3 ? 'm' + (k + 1) : ''}`}>{k + 1}</span>
             <div className={`avatar sm ${k % 2 ? 'violet' : ''}`}>{p.nick.slice(0, 1)}</div>
             <div className="who"><b>{p.nick}{p.id === V.hostId ? ' · מנהל' : ''}{p.id === P.id ? ' (אתה)' : ''}</b>
-              <span>{V.phase === 'over' ? `${p.buyIns} קניות${p.gifts ? ` · קיבל ${fmt(p.gifts)}` : ''} · מאזן ${net$(p) >= 0 ? '+' : ''}${fmt(net$(p))}` : p.away ? 'לא מחובר' : 'מוכן'}</span></div>
-            <span className="val num">{fmt(p.stack)}</span>
+              <span>{V.phase === 'over' && buyIn ? `מקום ${k + 1} · שילם ${fmt(buyIn)} מטבעות` : V.phase === 'over' ? `${p.buyIns} קניות${p.gifts ? ` · קיבל ${fmt(p.gifts)}` : ''} · מאזן ${net$(p) >= 0 ? '+' : ''}${fmt(net$(p))}` : p.away ? 'לא מחובר' : buyIn ? (p.paid ? 'בפנים ✓' : 'עוד לא נכנס') : 'מוכן'}</span></div>
+            <span className="val num">{V.phase === 'over' && buyIn ? (() => { const z = prizes(V as unknown as TS).find(x => x.id === p.id); return z ? `+${fmt(z.amount)} 🪙` : '—'; })() : fmt(p.stack)}</span>
           </motion.div>
         ))}
       </div>
       <div className="modal-actions">
-        {isHost && V.phase !== 'over' && <button className="btn gold wide" disabled={V.players.length < 2} onClick={() => { const s = S.current!; if (startHand(s, rnd, Date.now())) { dealOut(); commit(); track(P, 'table_start', { players: s.players.length }); } }}>{V.players.length < 2 ? 'מחכים לעוד שחקן…' : 'התחל משחק'}</button>}
+        {isHost && V.phase !== 'over' && <button className="btn gold wide" disabled={ready < 2} onClick={() => { const s = S.current!; if (startHand(s, rnd, Date.now())) { dealOut(); commit(); track(P, 'table_start', { players: s.players.length }); } }}>{ready < 2 ? (buyIn ? 'מחכים שלפחות 2 ייכנסו…' : 'מחכים לעוד שחקן…') : 'התחל משחק'}</button>}
         {!isHost && V.phase !== 'over' && <p className="muted" style={{ textAlign: 'center' }}>{hostHere ? 'מחכים שהמנהל יתחיל…' : 'המנהל התנתק. מחכים שיחזור…'}</p>}
         {V.phase === 'over' && <a className="btn wa wide" href={shareLinks(`סיימנו ערב פוקר ב-Poker IQ. ${standings[0]?.nick} לקח את הכול 🏆`, PUBLIC_URL).wa} target="_blank" rel="noreferrer">{I.wa} שתף תוצאות</a>}
         {V.phase === 'over' && <button className="btn wide" onClick={leave}>יציאה</button>}
@@ -475,7 +512,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           <motion.div className="phelp review" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="note" aria-label="סיכום היד שלך">
             <b>סיכום היד שלך</b>{handLog.slice(-2).map((x, k) => <span key={k} className={x.g}>{x.g === 'g' ? '✓' : x.g === 'c' ? '≈' : '✗'} {x.text}</span>)}
           </motion.div>)}
-        {!myCards && <div className="pro-note">{me?.out ? 'יצאת מהמשחק' : me && me.stack === 0 ? 'נגמרו לך הז׳יטונים' : 'תצטרף ביד הבאה'}</div>}
+        {!myCards && <div className="pro-note">{buyIn && me && !me.paid ? 'אתה צופה: המשחק התחיל לפני שנכנסת' : me?.out ? 'יצאת מהמשחק' : me && me.stack === 0 ? 'נגמרו לך הז׳יטונים' : 'תצטרף ביד הבאה'}</div>}
         {me && canRebuy(V as unknown as TS, me as any) && <button className="pbtn go" onClick={doRebuy}>ריביי · {fmt(V.cfg.stack)}</button>}
         {myTurn && me ? (
           raiseTo == null ? (
@@ -533,12 +570,12 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
                 else { s.paused = false; const d = Math.max(0, t - (s.pausedAt ?? t)); if (s.startedAt) s.startedAt += d; s.deadline += d; if (s.phase === 'show') { s.nextAt += d; if (s.showAt) s.showAt += d; } delete s.pausedAt; }
                 commit();
               }}>{V.paused ? 'המשך משחק' : 'הפסקה'}</button>
-              <div className="field"><label htmlFor="gamt">כמה ז׳יטונים לתת</label><input id="gamt" className="input" inputMode="numeric" value={giftAmt} onChange={e => setGiftAmt(e.target.value.replace(/\D/g, ''))} placeholder={String(V.cfg.stack)} /></div>
+              {!buyIn && <div className="field"><label htmlFor="gamt">כמה ז׳יטונים לתת</label><input id="gamt" className="input" inputMode="numeric" value={giftAmt} onChange={e => setGiftAmt(e.target.value.replace(/\D/g, ''))} placeholder={String(V.cfg.stack)} /></div>}
               <div className="rows" style={{ marginBottom: 12 }}>
                 {V.players.map(p => (
                   <div key={p.id} className="glass row" style={{ gridTemplateColumns: '1fr auto auto' }}>
                     <div className="who"><b>{p.nick}</b><span>{fmt(p.stack)}{p.pending ? ` (+${fmt(p.pending)} אחרי היד)` : ''} · {p.buyIns} קניות</span></div>
-                    <button className="pbtn go sm" onClick={() => { if (gift(S.current!, p.id, Number(giftAmt) || V.cfg.stack)) { commit(); toast(`${p.nick} קיבל ${fmt(Number(giftAmt) || V.cfg.stack)}`); } }}>תן</button>
+                    {!buyIn && <button className="pbtn go sm" onClick={() => { if (gift(S.current!, p.id, Number(giftAmt) || V.cfg.stack)) { commit(); toast(`${p.nick} קיבל ${fmt(Number(giftAmt) || V.cfg.stack)}`); } }}>תן</button>}
                     {p.id !== P.id && <button className="pbtn sm" disabled={V.phase === 'hand'} title={V.phase === 'hand' ? 'הוצאת שחקן אפשרית רק בין ידיים' : undefined} onClick={() => { const s = S.current!, x = s.players.find(q => q.id === p.id)!; x.out = !x.out; commit(); }}>{p.out ? 'החזר' : 'הוצא'}</button>}
                   </div>
                 ))}

@@ -6,7 +6,7 @@ import type { TAction, View } from '../engine/holdem';
 import { supabase } from './supabase';
 
 export interface TPeer { id: string; nick: string; host: boolean; pub: JsonWebKey; at: number }
-export type Cmd = { t: 'hello' } | { t: 'act'; hand: number; a: TAction } | { t: 'rebuy' } | { t: 'emoji'; e: string };
+export type Cmd = { t: 'hello' } | { t: 'act'; hand: number; a: TAction } | { t: 'rebuy' } | { t: 'emoji'; e: string } | { t: 'pay' } | { t: 'unpay' };
 interface Sealed { iv: string; ct: string }
 type Wire =
   | { k: 'st'; v: View }

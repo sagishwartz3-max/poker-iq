@@ -11,6 +11,8 @@ export interface Progress {
   coins: number;
   /** XP already earned today from decisions at the friends' table (capped) */
   tableDay: { date: string; xp: number };
+  /** the day the daily wheel was last spun */
+  wheel?: string;
 }
 /** A missed spot scheduled for spaced repetition. box 0..3: next review after 0, 1, 3, 7 days. */
 export interface Mistake { s: Scenario; box: number; due: number }

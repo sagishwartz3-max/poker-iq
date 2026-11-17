@@ -72,6 +72,8 @@ export function Play({ args }: { args: PlayArgs }) {
     setPoints(p => p + pts);
     update(p => {
       p.hands++; if (g !== 'b') p.correct++;
+      // free practice pays as you go, so closing the app never loses what was earned
+      if (endless) gain(p, pts * 0.3);
       recordSkill(p, s, g === 'g' ? 100 : g === 'c' ? 70 : 0);
       if (g === 'b') rememberMistake(p, s);
       else if (args.mode === 'review') promoteMistake(p, s);
@@ -81,11 +83,11 @@ export function Play({ args }: { args: PlayArgs }) {
         p.daily = { date: today(), score: points + pts, squares: marks.map(x => (x === 'g' ? '🟩' : x === 'c' ? '🟨' : '🟥')).join('') };
       }
     });
-    if (args.mode === 'daily') sync();
+    if (args.mode === 'daily' || endless) sync();
     setStreak(x => (g === 'g' ? x + 1 : 0));
     if (g === 'g') { sfx.good(); setBurst(b => b + 1); } else if (g === 'c') sfx.close(); else sfx.bad();
     setPhase('feedback');
-  }, [s, last, i, args.mode, update, res, points, sync]);
+  }, [s, last, i, args.mode, update, res, points, sync, endless]);
 
   // per-hand clock for timed stages
   useEffect(() => {
@@ -132,7 +134,7 @@ export function Play({ args }: { args: PlayArgs }) {
 
   const quit = () => {
     if (args.mode === 'daily' && res.length) { finish(); return; } // the attempt is used: bank what was played
-    if (endless && points) { const xp = Math.round(points * 0.3); update(p => { gain(p, xp); }); sync(); toast(`+${xp} XP מאימון חופשי`); }
+    if (endless && points) toast(`+${res.reduce((t, g) => t + Math.round((g === 'g' ? 100 : g === 'c' ? 70 : 0) * 0.3), 0)} XP מאימון חופשי`);
     go(args.mode === 'daily' ? 'daily' : 'home');
   };
 

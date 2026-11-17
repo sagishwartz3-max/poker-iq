@@ -21,7 +21,7 @@ export function Pro() {
   const { P, go, toast } = useApp();
   const price = useMemo(() => {
     const h = hashStr(P.id);
-    return { plus: PRICES.plus[h % 3], pro: PRICES.pro[(h >> 3) % 3], elite: PRICES.elite[(h >> 6) % 3] } as Record<Tier, number>;
+    return { plus: PRICES.plus[h % 3], pro: PRICES.pro[(h >>> 3) % 3], elite: PRICES.elite[(h >>> 6) % 3] } as Record<Tier, number>;
   }, [P.id]);
   const [pickTier, setPickTier] = useState<Tier | null>(null);
   const [contact, setContact] = useState('');

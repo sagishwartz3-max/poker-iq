@@ -3,6 +3,7 @@ import { dueMistakes, nodeId, today, unlocked } from '../game/progress';
 import { LEVELS, LEVEL_NAMES, levelOf, WORLDS } from '../game/worlds';
 import { useApp } from '../ui/ctx';
 import { I } from '../ui/Icons';
+import { WheelCard } from '../ui/Wheel';
 
 export function Header() {
   const { P, go } = useApp();
@@ -55,6 +56,7 @@ export function Home() {
           <span className="cta-s">ידיים בלי סוף</span>
         </motion.button>
       </div>
+      <WheelCard />
       {due > 0 && (
         <motion.button className="glass review-bar" onClick={() => go('play', { mode: 'review' })} whileTap={{ scale: 0.98 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <span style={{ fontSize: 26 }}>🎯</span>

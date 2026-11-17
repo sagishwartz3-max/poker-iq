@@ -51,6 +51,12 @@ export function track(p: Progress, event: string, meta: Record<string, unknown> 
   supabase.rpc('poker_track', { p_id: p.id, p_event: event, p_meta: meta }).then(({ error }) => { if (error) trackOff = true; });
 }
 
+/** Deletes the player's account and every row tied to it on the server. */
+export async function deletePlayer(p: Progress) {
+  const { error } = await supabase.rpc('poker_delete_player', { p_id: p.id, p_secret: p.secret });
+  if (error && !/bad secret/.test(error.message)) throw error; // never saved to the server: nothing to delete
+}
+
 /* ---------- Pro waitlist ("fake door" price test) ---------- */
 export async function joinWaitlist(p: Progress, tier: 'plus' | 'pro' | 'elite', price: string, contact: string) {
   await savePlayer(p).catch(() => {});
