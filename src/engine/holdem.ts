@@ -1,9 +1,11 @@
 // A full No-Limit Hold'em table for friends: play chips only. Pure functions over one state object,
 // so the same code can run on the host's device today and on a server later.
-import { CAT_NAMES, evalCards, type Rng } from './cards';
+import { best5, scoreName, type Rng } from './cards';
 
 export interface TCfg { stack: number; levelMin: number; rebuys: number; turnSec: number; /** learning mode: helper + hand review for every player */ learn?: boolean }
 export const DEFAULT_CFG: TCfg = { stack: 2000, levelMin: 10, rebuys: 2, turnSec: 30 };
+/** Seconds per turn: learning mode adds 15 so there is time to think the question through. */
+export const turnSecs = (cfg: TCfg) => cfg.turnSec + (cfg.learn ? 15 : 0);
 export const BLINDS: [number, number][] = [[10, 20], [15, 30], [25, 50], [50, 100], [75, 150], [100, 200], [150, 300], [200, 400], [300, 600], [500, 1000], [1000, 2000]];
 export const MAX_SEATS = 9;
 
@@ -21,13 +23,25 @@ export interface TS {
   pot: number; curBet: number; minRaise: number; turn: string | null; deadline: number;
   startedAt: number; level: number; sb: number; bb: number;
   winners: Win[]; shown: Record<string, number[]>; last: { id: string; text: string } | null; nextAt: number;
+  /** showdown timeline: when it began, how many board cards were already out before the run-out, the pot being won,
+   *  and each shown hand's name and best five cards */
+  showAt?: number; runFrom?: number; potWon?: number; hands?: Record<string, { name: string; best: number[] }>;
+}
+
+/** Seconds into the showdown when board card i lands, and when the result is revealed. Host and players share it. */
+export function showTimes(runFrom: number, showdown: boolean) {
+  const streetOf = (len: number) => (len >= 5 ? 3 : len >= 4 ? 2 : len >= 3 ? 1 : 0);
+  const from = streetOf(runFrom), steps = showdown ? 3 - from : 0;
+  const cardAt = (i: number) => (!showdown || i < runFrom ? 0 : 0.9 + ((i < 3 ? 1 : i - 1) - from - 1) * 1.7 + (i < 3 ? i * 0.15 : 0));
+  const resolveAt = !showdown ? 0.3 : steps ? 0.9 + (steps - 1) * 1.7 + 1.3 : 1.4;
+  return { cardAt, resolveAt, endAt: resolveAt + (showdown ? 6 : 2.9) };
 }
 export type TAction = { type: 'fold' | 'check' | 'call' } | { type: 'raise'; to: number };
 
 export function newTable(code: string, hostId: string, cfg: TCfg): TS {
   return { code, hostId, cfg, phase: 'lobby', paused: false, players: [], handNo: 0, btn: -1, street: 0, board: [], deck: [],
     pot: 0, curBet: 0, minRaise: 0, turn: null, deadline: 0, startedAt: 0, level: 0, sb: BLINDS[0][0], bb: BLINDS[0][1],
-    winners: [], shown: {}, last: null, nextAt: 0 };
+    winners: [], shown: {}, last: null, nextAt: 0, hands: {}, runFrom: 0, potWon: 0, showAt: 0 };
 }
 export function seat(s: TS, id: string, nick: string): TP | null {
   const ex = s.players.find(p => p.id === id);
@@ -65,7 +79,7 @@ export function startHand(s: TS, rng: Rng, now: number): boolean {
   if (s.cfg.levelMin > 0) s.level = Math.min(BLINDS.length - 1, Math.floor((now - s.startedAt) / (s.cfg.levelMin * 60000)));
   [s.sb, s.bb] = BLINDS[s.level];
   for (const p of s.players) { p.bet = 0; p.total = 0; p.folded = false; p.allIn = false; p.acted = false; p.actedBet = 0; p.inHand = p.stack > 0 && !p.out; delete p.cards; }
-  s.handNo++; s.street = 0; s.board = []; s.pot = 0; s.winners = []; s.shown = {}; s.last = null; s.phase = 'hand';
+  s.handNo++; s.street = 0; s.board = []; s.pot = 0; s.winners = []; s.shown = {}; s.hands = {}; s.runFrom = 0; s.potWon = 0; s.last = null; s.phase = 'hand';
   s.btn = nextIdx(s, s.btn < 0 ? Math.floor(rng() * s.players.length) : s.btn, p => p.inHand);
   const deck: number[] = [];
   for (let c = 0; c < 52; c++) deck.push(c);
@@ -118,9 +132,10 @@ export function act(s: TS, id: string, a: TAction, now: number): boolean {
 }
 
 function progress(s: TS, now: number) {
+  const b0 = s.board.length; // cards out before an all-in run-out
   for (;;) {
     const live = alive(s);
-    if (live.length === 1) { finish(s, now, false); return; }
+    if (live.length === 1) { finish(s, now, false, b0); return; }
     const actors = live.filter(p => !p.allIn);
     const matched = actors.every(p => p.bet === s.curBet);
     const done = matched && (actors.length <= 1 || actors.every(p => p.acted));
@@ -128,10 +143,10 @@ function progress(s: TS, now: number) {
       const from = s.players.findIndex(p => p.id === s.turn);
       const i = nextIdx(s, from, p => canAct(p) && (!p.acted || p.bet < s.curBet));
       s.turn = s.players[i].id;
-      s.deadline = now + (s.players[i].away ? 5 : s.cfg.turnSec) * 1000;
+      s.deadline = now + (s.players[i].away ? 5 : turnSecs(s.cfg)) * 1000;
       return;
     }
-    if (s.street === 3) { finish(s, now, true); return; }
+    if (s.street === 3) { finish(s, now, true, b0); return; }
     s.street++;
     for (const p of s.players) { p.bet = 0; p.acted = false; p.actedBet = 0; }
     s.curBet = 0; s.minRaise = s.bb;
@@ -143,7 +158,7 @@ function progress(s: TS, now: number) {
   }
 }
 
-function finish(s: TS, now: number, showdown: boolean) {
+function finish(s: TS, now: number, showdown: boolean, b0: number) {
   const live = alive(s);
   const won: Record<string, Win> = {};
   const give = (p: TP, amount: number, name: string) => { p.stack += amount; (won[p.id] ||= { id: p.id, amount: 0, name }).amount += amount; };
@@ -151,7 +166,11 @@ function finish(s: TS, now: number, showdown: boolean) {
   else {
     while (s.board.length < 5) s.board.push(s.deck.pop()!);
     const score: Record<string, number> = {};
-    for (const p of live) { score[p.id] = evalCards([...p.cards!, ...s.board]); s.shown[p.id] = p.cards!; }
+    s.hands = {};
+    for (const p of live) {
+      const b = best5([...p.cards!, ...s.board]);
+      score[p.id] = b.score; s.shown[p.id] = p.cards!; s.hands[p.id] = { name: scoreName(b.score), best: b.cards };
+    }
     const levels = [...new Set(live.map(p => p.total))].sort((a, b) => a - b);
     let prev = 0;
     const order = (p: TP) => (s.players.indexOf(p) - s.btn - 1 + s.players.length) % s.players.length;
@@ -164,7 +183,7 @@ function finish(s: TS, now: number, showdown: boolean) {
       const winners = elig.filter(p => score[p.id] === best).sort((a, b) => order(a) - order(b));
       const share = Math.floor(amount / winners.length);
       let rest = amount - share * winners.length;
-      for (const w of winners) { give(w, share + (rest > 0 ? 1 : 0), CAT_NAMES[best >> 20]); if (rest > 0) rest--; }
+      for (const w of winners) { give(w, share + (rest > 0 ? 1 : 0), scoreName(best)); if (rest > 0) rest--; }
     }
     // chips nobody could match go back to their owner
     const top = Math.max(...s.players.map(p => p.total));
@@ -172,8 +191,9 @@ function finish(s: TS, now: number, showdown: boolean) {
     if (over > 0) (s.players.find(x => x.total === top && !x.folded) || live[0]).stack += over;
   }
   s.winners = Object.values(won).sort((a, b) => b.amount - a.amount);
+  s.potWon = s.pot; s.runFrom = Math.min(b0, s.board.length); s.showAt = now;
   s.pot = 0; s.turn = null; s.phase = 'show';
-  s.nextAt = now + (showdown ? 6500 : 2500);
+  s.nextAt = now + showTimes(s.runFrom, showdown).endAt * 1000;
 }
 
 /** After the showdown pause: mark busted players and decide whether the game goes on. */

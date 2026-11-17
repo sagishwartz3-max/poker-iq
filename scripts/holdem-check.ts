@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { mulberry32 } from '../src/engine/cards';
-import { act, DEFAULT_CFG, endHand, gift, mayRaise, newTable, publicView, seat, startHand, timeoutAction } from '../src/engine/holdem';
+import { best5, mulberry32, RN, scoreName } from '../src/engine/cards';
+import { act, DEFAULT_CFG, endHand, gift, mayRaise, newTable, publicView, seat, showTimes, startHand, timeoutAction } from '../src/engine/holdem';
 
 const s = newTable('TEST', 'a', { ...DEFAULT_CFG, rebuys: 0 });
 for (const id of ['a','b','c']) seat(s, id, id);
@@ -55,3 +55,23 @@ assert(startHand(h, mulberry32(3), 1400));
 assert.equal(p.pending, 0);
 assert.equal(p.gifts, 300);
 console.log('OK: privacy, invalid actions, pause, short all-in reopening, heads-up order, pending gifts');
+
+// Showdown story: best five cards, readable names, and an all-in run-out that is dealt street by street.
+{
+  const c = (r: string, su: number) => RN.indexOf(r) * 4 + su; // su: 0♠ 1♥ 2♦ 3♣
+  const b = best5([c('A', 1), c('K', 1), c('2', 1), c('7', 1), c('9', 0), c('Q', 1), c('3', 2)]);
+  assert.equal(b.score >> 20, 5); assert.equal(scoreName(b.score), 'צבע, A גבוה');
+  assert(b.cards.every(x => (x & 3) === 1) && b.cards.length === 5);
+  assert.equal(scoreName(best5([c('8', 0), c('8', 1), c('K', 2), c('K', 3), c('8', 2), c('2', 0), c('4', 1)]).score), 'פול האוס: 8 על K');
+  assert.equal(scoreName(best5([c('A', 0), c('2', 1), c('3', 2), c('4', 3), c('5', 2), c('9', 0), c('J', 1)]).score), 'רצף עד 5');
+  const t = newTable('S', 'a', DEFAULT_CFG); seat(t, 'a', 'a'); seat(t, 'b', 'b');
+  startHand(t, mulberry32(9), 1000);
+  assert(act(t, t.turn!, { type: 'raise', to: 99999 }, 1100));
+  assert(act(t, t.turn!, { type: 'call' }, 1200));
+  assert.equal(t.phase, 'show'); assert.equal(t.runFrom, 0); assert.equal(t.board.length, 5);
+  assert(t.hands!.a && t.hands!.b && t.potWon === 2 * DEFAULT_CFG.stack);
+  const tm = showTimes(t.runFrom!, true);
+  assert(tm.cardAt(0) > 0 && tm.cardAt(3) > tm.cardAt(2) && tm.cardAt(4) > tm.cardAt(3) && tm.resolveAt > tm.cardAt(4));
+  assert.equal(t.nextAt, 1200 + tm.endAt * 1000);
+  console.log('OK: showdown names, best five, staged run-out');
+}

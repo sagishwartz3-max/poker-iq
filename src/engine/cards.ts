@@ -239,3 +239,31 @@ export function madeHand(hero: number[], board: number[]): Made {
   }
   return { cat, name: `קלף גבוה ${RN[Math.max(a, b)]}`, strength: 0 };
 }
+
+/** The five cards that make the best hand out of 5..7, and their score. */
+export function best5(cs: number[]): { score: number; cards: number[] } {
+  let score = -1, cards = cs.slice(0, 5);
+  const n = cs.length, idx = [0, 1, 2, 3, 4];
+  const walk = (k: number, from: number) => {
+    if (k === 5) { const five = idx.map(i => cs[i]); const sc = evalCards(five); if (sc > score) { score = sc; cards = five; } return; }
+    for (let i = from; i <= n - (5 - k); i++) { idx[k] = i; walk(k + 1, i + 1); }
+  };
+  walk(0, 0);
+  return { score, cards };
+}
+
+/** "צבע, A גבוה", "שני זוגות: K ו-8", "פול האוס: 8 על K" … from an evalCards score. */
+export function scoreName(s: number): string {
+  const cat = s >> 20, r = (sh: number) => RN[(s >> sh) & 15];
+  switch (cat) {
+    case 8: return ((s & 15) === 12 ? 'רויאל פלאש' : `רצף בצבע עד ${RN[s & 15]}`);
+    case 7: return `רביעייה של ${r(4)}`;
+    case 6: return `פול האוס: ${r(4)} על ${r(0)}`;
+    case 5: return `צבע, ${r(16)} גבוה`;
+    case 4: return `רצף עד ${RN[s & 15]}`;
+    case 3: return `שלישייה של ${r(8)}`;
+    case 2: return `שני זוגות: ${r(8)} ו-${r(4)}`;
+    case 1: return `זוג ${r(12)}`;
+    default: return `קלף גבוה ${r(16)}`;
+  }
+}

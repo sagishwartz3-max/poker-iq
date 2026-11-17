@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isRed, madeHand, RN, SUITS } from '../engine/cards';
-import { act, BLINDS, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, publicView, rebuy, seat, startHand, timeoutAction, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
-import { adviceText, gradeTable, reviewText, tableAdvice, type TGrade } from '../engine/coach';
-import { gain, TABLE_XP_DAY, today } from '../game/progress';
+import { act, BLINDS, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, publicView, rebuy, seat, showTimes, startHand, timeoutAction, turnSecs, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
+import { answerText, gradeTable, reviewText, spotLesson, tableAdvice, thinkText, type TGrade } from '../engine/coach';
+import { gain, SKILLS, TABLE_XP_DAY, today } from '../game/progress';
 import { sfx } from '../game/sound';
 import { createRoom, getRoom, PUBLIC_URL, track } from '../net/supabase';
 import { TableNet, type Cmd, type TPeer } from '../net/table';
@@ -23,9 +23,9 @@ const LAST_HOSTED = 'pokeriq-table-last';
 const fmt = (n: number) => n.toLocaleString('he-IL');
 const EMOJIS = ['👍', '😂', '😱', '🔥', '🤡', '👏'];
 
-function MiniCard({ c, size = 30, down = false, delay = 0 }: { c: number; size?: number; down?: boolean; delay?: number }) {
+function MiniCard({ c, size = 30, down = false, delay = 0, hl = '' }: { c: number; size?: number; down?: boolean; delay?: number; hl?: string }) {
   return (
-    <motion.div className={`card3d ${isRed(c) ? 'red' : ''}`} style={{ '--cw': `${size}px` } as React.CSSProperties}
+    <motion.div className={`card3d ${isRed(c) ? 'red' : ''} ${hl}`} style={{ '--cw': `${size}px` } as React.CSSProperties}
       initial={{ rotateY: 180, y: -30, opacity: 0 }} animate={{ rotateY: down ? 180 : 0, y: 0, opacity: 1 }} transition={{ delay, type: 'spring', stiffness: 170, damping: 18 }}>
       <div className="face"><span className="rk">{RN[c >> 2]}</span><span className="su">{SUITS[c & 3]}</span><span className="big">{SUITS[c & 3]}</span></div>
       <div className="back" />
@@ -55,13 +55,13 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const [raiseTo, setRaiseTo] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
   const [tray, setTray] = useState(false);
-  const [peekOff, setPeekOff] = useState(() => { try { return localStorage.getItem('pokeriq-peek-off') === '1'; } catch { return false; } });
   const [helpOff, setHelpOff] = useState(() => { try { return localStorage.getItem('pokeriq-help-off') === '1'; } catch { return false; } });
   const toggleHelp = () => setHelpOff(v => { try { localStorage.setItem('pokeriq-help-off', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
   // this player's graded decisions tonight (private, never sent to the table)
-  const [log, setLog] = useState<{ hand: number; g: TGrade; text: string }[]>([]);
+  const [log, setLog] = useState<{ hand: number; g: TGrade; text: string; skills: string[]; hinted: boolean }[]>([]);
+  const [shownAns, setShownAns] = useState(''); // the spot whose answer the player asked to see
+  const [fb, setFb] = useState<{ g: TGrade; text: string; at: number } | null>(null);
   const [earned, setEarned] = useState(0);
-  const togglePeek = () => setPeekOff(v => { try { localStorage.setItem('pokeriq-peek-off', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
   const [tall, setTall] = useState(() => typeof window !== 'undefined' && innerHeight > innerWidth * 1.15);
   const [giftAmt, setGiftAmt] = useState('');
   const [now, setNow] = useState(Date.now());
@@ -113,8 +113,11 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         if (practice && s.phase === 'hand' && s.turn && s.turn !== P.id && t > botDue.current) {
           const bot = s.players.find(p => p.id === s.turn)!;
           const call = Math.max(0, s.curBet - bot.bet), roll = rnd();
-          const action: TAction = mayRaise(s, bot) && roll > .86 ? { type: 'raise', to: s.curBet + s.minRaise }
-            : call && roll < .12 ? { type: 'fold' } : call ? { type: 'call' } : { type: 'check' };
+          // practice bots play their cards: weak hands give up against big bets, strong ones raise more often
+          const str = bot.cards ? madeHand(bot.cards, s.board).strength : 1;
+          const big = call > Math.max(s.bb * 6, (bot.stack + bot.bet) * 0.25);
+          const action: TAction = mayRaise(s, bot) && (str >= 3 ? roll > .55 : roll > .9) ? { type: 'raise', to: s.curBet + s.minRaise }
+            : call && (big ? str < 3 && roll < .85 : str === 0 ? roll < .4 : roll < .1) ? { type: 'fold' } : call ? { type: 'call' } : { type: 'check' };
           act(s, bot.id, action, t); botDue.current = t + 1600; changed = true;
         } else if (s.phase === 'hand' && t > s.deadline && s.turn) { act(s, s.turn, timeoutAction(s), t); changed = true; }
         else if (s.phase === 'show' && t > s.nextAt) { endHand(s); if ((s.phase as string) !== 'over' && startHand(s, rnd, t)) dealOut(); changed = true; }
@@ -139,11 +142,12 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     net.current?.leave();
     S.current = null;
     if (host) {
-      try { const saved = JSON.parse(localStorage.getItem(saveKey(c)) || 'null') as TS | null; if (saved && saved.hostId === P.id) { S.current = saved; if (saved.phase === 'hand') saved.deadline = Date.now() + saved.cfg.turnSec * 1000; } } catch { /* no save */ }
+      try { const saved = JSON.parse(localStorage.getItem(saveKey(c)) || 'null') as TS | null; if (saved && saved.hostId === P.id) { S.current = saved; if (saved.phase === 'hand') saved.deadline = Date.now() + turnSecs(saved.cfg) * 1000; } } catch { /* no save */ }
       if (!S.current) { S.current = newTable(c, P.id, cfg); seat(S.current, P.id, P.nick || 'שחקן'); }
       try { localStorage.setItem(LAST_HOSTED, c); } catch { /* storage off */ }
     }
     setPractice(false); setIsHost(host); setCode(c); setV(null); setMine(null); setPeers([]);
+    setLog([]); setEarned(0); setFb(null);
     const n = new TableNet(c, rm.channel, { id: P.id, nick: P.nick || 'שחקן' }, host, {
       onPeers: setPeers, onStatus: setStatus,
       onState: v => { setV(v); setSkew(v.at - Date.now()); },
@@ -181,30 +185,48 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const maxTo = me ? me.bet + me.stack : 0;
   const minTo = V ? Math.min(maxTo, V.curBet + V.minRaise) : 0;
   const hostNow = now + skew;
-  const left = V && V.phase === 'hand' ? Math.min(V.cfg.turnSec, Math.max(0, (V.deadline - (V.paused ? V.pausedAt ?? hostNow : hostNow)) / 1000)) : 0;
+  const left = V && V.phase === 'hand' ? Math.min(turnSecs(V.cfg), Math.max(0, (V.deadline - (V.paused ? V.pausedAt ?? hostNow : hostNow)) / 1000)) : 0;
   const lvLeft = V && V.levelEnds ? Math.max(0, V.levelEnds - hostNow) : 0;
   const learn = !!V?.cfg.learn;
   const potAll = V ? V.pot : 0; // the pot already includes this street's bets
   const nOpp = V ? V.players.filter(p => p.inHand && !p.folded && p.id !== P.id).length : 0;
   const payNow = me ? Math.min(toCall, me.stack) : 0;
   // the coach's read of my spot: always computed on my turn (to grade the decision), shown only in learning mode
-  const advice = useMemo(() => (myTurn && myCards && V ? tableAdvice(myCards, V.board, nOpp, potAll, payNow, V.handNo * 977 + V.street * 31 + payNow) : null),
+  const advice = useMemo(() => (myTurn && myCards && V ? tableAdvice(myCards, V.board, nOpp, potAll, payNow, V.handNo * 977 + V.street * 31 + payNow, V.bb, V.curBet) : null),
     [myTurn, myCards?.join(), V?.board.length, V?.handNo, nOpp, potAll, payNow]); // eslint-disable-line react-hooks/exhaustive-deps
   const handLog = V ? log.filter(x => x.hand === V.handNo) : [];
+  const spotKey = V ? `${V.handNo}-${V.street}-${payNow}` : '';
+  const ansOpen = !!advice && shownAns === spotKey;
+  // the showdown timeline: board cards of an all-in run-out land one street at a time, then the result is revealed
+  const sd = V?.phase === 'show';
+  const showdown = sd && !!V && Object.keys(V.shown).length > 0;
+  const tm = showTimes(V?.runFrom ?? 5, showdown);
+  const tShow = sd && V?.showAt ? (now + skew - V.showAt) / 1000 : 99;
+  const resolved = sd && tShow >= tm.resolveAt;
+  const winBest = new Set(sd && V?.winners[0] ? V.hands?.[V.winners[0].id]?.best ?? [] : []);
+  const hlOf = (c: number) => (resolved && showdown ? (winBest.has(c) ? 'hl' : 'lo') : '') as '' | 'hl' | 'lo';
 
   useEffect(() => { setRaiseTo(null); if (V?.handNo) sfx.deal(0); }, [V?.handNo]);
   useEffect(() => { setRaiseTo(null); if (myTurn) sfx.tick(); }, [myTurn, V?.street]);
   useEffect(() => { if (V?.last) sfx.chip(); }, [V?.last?.id, V?.last?.text, V?.pot]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (V?.phase === 'show' && V.winners.some(w => w.id === P.id)) { sfx.good(); setBurst(b => b + 1); } }, [V?.phase, V?.handNo]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (resolved && V!.winners.some(w => w.id === P.id)) { sfx.good(); setBurst(b => b + 1); } }, [resolved, V?.handNo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const grade = (a: TAction) => {
     if (!advice || !V) return;
     const kind = a.type;
-    const g = gradeTable(advice, kind);
-    setLog(l => [...l, { hand: V.handNo, g, text: reviewText(advice, kind, g) }]);
-    const want = g === 'g' ? 6 : g === 'c' ? 3 : 0, d = today();
-    const used = P.tableDay?.date === d ? P.tableDay.xp : 0, give = Math.max(0, Math.min(want, TABLE_XP_DAY - used));
-    if (give) { update(p => { if (p.tableDay?.date !== d) p.tableDay = { date: d, xp: 0 }; p.tableDay.xp += give; gain(p, give); }); setEarned(e => e + give); sync(); }
+    const g = gradeTable(advice, kind), text = reviewText(advice, kind, g), skills = spotLesson(advice).skills;
+    setLog(l => [...l, { hand: V.handNo, g, text, skills, hinted: ansOpen }]);
+    if (learn) setFb({ g, text, at: Date.now() });
+    // a decision made after looking at the answer earns less: the point is to work it out
+    const want = (g === 'g' ? 6 : g === 'c' ? 3 : 0) / (ansOpen ? 2 : 1), d = today();
+    const used = P.tableDay?.date === d ? P.tableDay.xp : 0, give = Math.max(0, Math.min(Math.floor(want), TABLE_XP_DAY - used));
+    update(p => {
+      // table decisions count in the same skill map the app uses for its targeted practice
+      if (learn) for (const k of skills) { const v = p.skills[k] || [0, 0]; p.skills[k] = [v[0] + 1, v[1] + (g === 'g' ? 100 : g === 'c' ? 70 : 0)]; }
+      if (give) { if (p.tableDay?.date !== d) p.tableDay = { date: d, xp: 0 }; p.tableDay.xp += give; gain(p, give); }
+    });
+    if (give) setEarned(e => e + give);
+    sync();
   };
   const doAct = (a: TAction) => {
     grade(a);
@@ -219,7 +241,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     const s = newTable('TRAIN', P.id, cfg);
     seat(s, P.id, P.nick || 'אני');
     ['נועם · בוט', 'מיה · בוט', 'אורי · בוט', 'דניאל · בוט', 'עומר · בוט'].forEach((nick, i) => seat(s, `bot-${i}`, nick));
-    S.current = s; setPractice(true); setIsHost(true); setCode('TRAIN'); setPeers([]);
+    S.current = s; setPractice(true); setIsHost(true); setCode('TRAIN'); setPeers([]); setLog([]); setEarned(0); setFb(null);
     startHand(s, rnd, Date.now()); botDue.current = Date.now() + 1600; commit();
   };
 
@@ -267,6 +289,12 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   );
 
   const started = V.handNo > 0;
+  // the skill tonight's decisions went worst in, for a targeted drill in the app
+  const weak = (() => {
+    const m: Record<string, { n: number; good: number }> = {};
+    for (const x of log) for (const k of x.skills) { const v = (m[k] ||= { n: 0, good: 0 }); v.n++; if (x.g !== 'b') v.good++; }
+    return Object.entries(m).filter(([k, v]) => SKILLS[k] && v.n >= 2 && v.good / v.n < 0.85).map(([key, v]) => ({ key, ...v })).sort((a, b) => a.good / a.n - b.good / b.n)[0];
+  })();
   const standings = [...V.players].sort((a, b) => b.stack - a.stack);
   const net$ = (p: PV) => p.stack + p.pending - p.buyIns * V.cfg.stack - p.gifts;
 
@@ -294,6 +322,10 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           <h3 className="h-md" style={{ marginBottom: 6 }}>הדוח שלך מהערב</h3>
           <p style={{ margin: '0 0 6px' }}><b className="num">{log.length}</b> החלטות · <b className="num">{Math.round(log.filter(x => x.g !== 'b').length / log.length * 100)}%</b> טובות · <span className="gold-text">+{earned} XP ומטבעות</span></p>
           {log.find(x => x.g === 'b') && <p className="muted" style={{ margin: 0, fontSize: 14 }}>הטעות שכדאי לזכור: {log.find(x => x.g === 'b')!.text}</p>}
+          {weak && <div className="glass row" style={{ marginTop: 10, gridTemplateColumns: '1fr auto' }}>
+            <div className="who"><b>הכי כדאי לתרגל: {SKILLS[weak.key]}</b><span>{weak.good} מתוך {weak.n} החלטות טובות הערב</span></div>
+            <button className="btn gold" onClick={() => { leave(); go('play', { mode: 'drill', drill: weak.key }); }}>תרגל באפליקציה</button>
+          </div>}
           <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}>ההחלטות נבדקות רק אצלך. אף שחקן אחר לא רואה אותן.</p>
         </div>
       )}
@@ -338,6 +370,10 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const turnP = V.players.find(p => p.id === V.turn);
   const lastActor = V.last ? V.players.findIndex(p => p.id === V.last!.id) : -1;
   const potNow = V.pot;
+  // which learning card sits above my buttons: the lesson + question on my turn, a quick verdict right after I act, the hand review at the showdown
+  const helpCard = !learn || helpOff ? null : myTurn && advice ? 'think' : sd && handLog.length ? 'review' : fb && now - fb.at < 4500 && fb.at > 0 ? 'fb' : null;
+  const potShown = sd && !resolved ? V.potWon ?? 0 : V.pot;
+  const wonBy = (id: string) => (sd ? V.winners.find(w => w.id === id)?.amount ?? 0 : 0);
   const clamp = (v: number) => Math.max(minTo, Math.min(maxTo, Math.round(v / V.sb) * V.sb || minTo));
   const presets: [string, number][] = [['Min', minTo], ['½ Pot', clamp(V.curBet + (potNow + toCall) / 2)], ['¾', clamp(V.curBet + (potNow + toCall) * 0.75)], ['Pot', clamp(V.curBet + potNow + toCall)], ['All-in', maxTo]];
   const mmss = `${String(Math.floor(lvLeft / 60000)).padStart(2, '0')}:${String(Math.floor(lvLeft / 1000) % 60).padStart(2, '0')}`;
@@ -356,71 +392,86 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
 
       <div className="ptable">
         <div className="rail"><div className="pfelt"><div className="pfelt-line" /><div className="pfelt-logo">POKER IQ</div></div></div>
-        <div className="pboard">{V.board.map((c, i) => <MiniCard key={`${V.handNo}-${i}`} c={c} size={145} delay={i < 3 ? i * 0.12 : 0} />)}</div>
-        <motion.div className="ppot" key={V.handNo} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-          <Chips amount={V.pot} unit={V.bb} size={38} /><span>קופה</span><b className="num">{fmt(V.pot)}</b>
-        </motion.div>
-        <div className="room-center-chips"><Chips amount={V.pot} unit={V.bb} size={50} /></div>
+        <div className="pboard">{V.board.map((c, i) => <MiniCard key={`${V.handNo}-${i}`} c={c} size={145} hl={hlOf(c)}
+          delay={sd && i >= (V.runFrom ?? 5) ? Math.max(0, tm.cardAt(i) - tShow) : i < 3 ? i * 0.12 : 0} />)}</div>
+        {!resolved && <motion.div className="ppot" key={V.handNo} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+          <Chips amount={potShown} unit={V.bb} size={38} /><span>קופה</span><b className="num">{fmt(potShown)}</b>
+        </motion.div>}
+        <div className="room-center-chips"><Chips amount={potShown} unit={V.bb} size={50} /></div>
         {lastActor >= 0 && V.phase === 'hand' && V.last && !['Check', 'Fold', 'צ׳ק', 'פולד'].includes(V.last.text) && (
           <motion.div key={`${V.handNo}-${V.pot}-${V.last.id}`} className="chip-flight"
             initial={{ left: `${pos(lastActor).x}%`, top: `${pos(lastActor).y}%`, opacity: 1, scale: .8 }}
             animate={{ left: potAt.x, top: potAt.y, opacity: [1, 1, 0], scale: 1 }} transition={{ duration: .65, ease: 'easeOut' }}>
-            <Chips amount={V.bb * 3} unit={V.bb} size={33} />
+            <Chips amount={Math.max(V.bb, V.players[lastActor]?.bet || V.bb)} unit={V.bb} size={33} />
           </motion.div>
         )}
-        {V.phase === 'show' && V.winners.map(w => {
+        {resolved && V.winners.map(w => {
           const index = V.players.findIndex(p => p.id === w.id);
           const xy = pos(index);
           return <motion.div key={`${V.handNo}-${w.id}`} className="chip-flight"
             initial={{ left: potAt.x, top: potAt.y, opacity: 1, scale: 1.2 }}
             animate={{ left: `${xy.x}%`, top: `${xy.y}%`, opacity: [1, 1, 0], scale: .7 }}
-            transition={{ delay: .6, duration: .9, ease: 'easeInOut' }}>
+            transition={{ delay: .5, duration: 1, ease: 'easeInOut' }}>
             <Chips amount={w.amount} unit={V.bb} size={40} />
           </motion.div>;
         })}
         {V.players.map((p, i) => {
           const xy = pos(i), isMe = p.id === P.id, turn = V.turn === p.id && V.phase === 'hand';
-          const shown = V.shown[p.id], won = V.phase === 'show' && V.winners.find(w => w.id === p.id);
+          const shown = V.shown[p.id], won = resolved && V.winners.find(w => w.id === p.id), sh = V.hands?.[p.id];
           const bub = bubbles[p.id], bp = tall ? { x: xy.x + (xy.x < 50 ? 4 : -4), y: xy.y + (isMe ? -9 : 5.6) } : { x: xy.x + (xy.x < 50 ? 1 : -1), y: xy.y + (isMe ? -12 : 10) }, dp = mid(xy, 0.12);
           const relative = (i - hi + N) % N;
           const avatar = ['10_avatar_hero', '07_avatar_left', '05_avatar_top_left', '06_avatar_top_right', '08_avatar_right', '09_avatar_lower_right'][relative % 6];
           return (
             <div key={p.id}>
-              <div className={`pseat ${tall && xy.x > 50 ? 'flip' : ''} ${p.inHand && !p.folded ? '' : 'dim'} ${isMe ? 'me' : ''} ${turn ? 'turn' : ''} ${won ? 'won' : ''}`} style={{ left: `${xy.x}%`, top: `${xy.y}%` }}>
+              <div className={`pseat ${tall && xy.x > 50 ? 'flip' : ''} ${tall && !isMe ? (xy.y > 44 || xy.y < 19 ? 'sd-down' : xy.y < 25 ? 'sd-side' : '') : ''} ${p.inHand && !p.folded ? '' : 'dim'} ${isMe ? 'me' : ''} ${turn ? 'turn' : ''} ${won ? 'won' : ''}`} style={{ left: `${xy.x}%`, top: `${xy.y}%` }}>
                 {p.has && !shown && !isMe && <div className="pbacks"><i /><i /></div>}
-                {shown && !isMe && <div className="pshown">{shown.map((c, k) => <MiniCard key={k} c={c} size={28} delay={k * 0.1} />)}</div>}
+                {shown && !isMe && <div className={`pshown ${resolved ? (won ? 'win' : 'lose') : ''}`}>{shown.map((c, k) => <MiniCard key={k} c={c} size={28} delay={k * 0.1} hl={hlOf(c)} />)}
+                  {resolved && sh && <em className="phand">{sh.name}</em>}</div>}
                 <div className="pavatar" style={{ '--h': `${(p.nick.charCodeAt(0) * 47) % 360}` } as React.CSSProperties}>
                   <img src={`/table/${avatar}.webp`} alt="" aria-hidden="true" />
-                  {turn && <svg className="pring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" pathLength="100" strokeDasharray={`${Math.min(100, (left / V.cfg.turnSec) * 100)} 100`} /></svg>}
+                  {turn && <svg className="pring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" pathLength="100" strokeDasharray={`${Math.min(100, (left / turnSecs(V.cfg)) * 100)} 100`} /></svg>}
                   {turn && <b className="psec num">{Math.ceil(left)}</b>}
                 </div>
                 <div className="pplate"><span className="pname">{isMe ? 'אני' : p.nick}{p.away ? ' · לא מחובר' : ''}</span>
-                  <span className="pstack num">{p.out ? 'בחוץ' : p.allIn && p.inHand ? 'All-in' : fmt(p.stack)}</span></div>
+                  <span className="pstack num">{p.out ? 'בחוץ' : p.allIn && p.inHand && !sd ? 'All-in' : fmt(sd && !resolved ? p.stack - wonBy(p.id) : p.stack)}</span></div>
                 {V.last?.id === p.id && V.phase === 'hand' && <motion.span key={V.last.text + V.pot} className="psaid" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>{V.last.text}</motion.span>}
                 <AnimatePresence>{bub && now - bub.k < 2500 && <motion.span key={bub.k} className="bubble" initial={{ scale: 0, y: 0 }} animate={{ scale: 1.2, y: -30 }} exit={{ opacity: 0 }}>{bub.e}</motion.span>}</AnimatePresence>
               </div>
-              {p.bet > 0 && <motion.div className="pbet" initial={{ left: `${xy.x}%`, top: `${xy.y}%`, opacity: 0 }} animate={{ left: `${bp.x}%`, top: `${bp.y}%`, opacity: 1 }} transition={{ type: 'spring', stiffness: 200, damping: 22 }}>
+              {p.bet > 0 && !sd && <motion.div className="pbet" initial={{ left: `${xy.x}%`, top: `${xy.y}%`, opacity: 0 }} animate={{ left: `${bp.x}%`, top: `${bp.y}%`, opacity: 1 }} transition={{ type: 'spring', stiffness: 200, damping: 22 }}>
                 <Chips amount={p.bet} unit={V.bb} size={33} /><b className="num">{fmt(p.bet)}</b></motion.div>}
               {i === V.btn && <div className="pdealer" style={{ left: `${dp.x + (xy.x < 50 ? 7 : -7)}%`, top: `${dp.y}%` }}>D</div>}
             </div>
           );
         })}
         <AnimatePresence>
-        {V.phase === 'show' && V.winners[0] && (
-          <motion.div className="pwin" initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-            {V.winners.map(w => `${V.players.find(p => p.id === w.id)?.nick} זכה ב-${fmt(w.amount)}${w.name ? ` עם ${w.name}` : ''}`).join(' · ')}
-          </motion.div>
-        )}
+        {resolved && V.winners[0] && (() => {
+          const nick = (id: string) => (id === P.id ? 'אתה' : V.players.find(p => p.id === id)?.nick ?? '');
+          const losers = Object.keys(V.shown).filter(id => !V.winners.some(w => w.id === id)).sort((a, b) => (b === P.id ? 1 : 0) - (a === P.id ? 1 : 0));
+          const split = V.winners.length > 1 && V.winners.every(w => w.name === V.winners[0].name);
+          return (
+          <motion.div key={V.handNo} className={`pwin ${V.winners.some(w => w.id === P.id) ? 'mine' : ''}`} initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ type: 'spring', stiffness: 220, damping: 18 }}>
+            {split ? <b>הקופה מתחלקת · {V.winners.map(w => nick(w.id)).join(' ו')}</b>
+              : V.winners.map(w => <b key={w.id}>{nick(w.id)} זוכה ב-<span className="num">{fmt(w.amount)}</span></b>)}
+            {showdown ? <span className="pwhy">{split ? `לשניהם ${V.winners[0].name}` : `עם ${V.winners[0].name}`}{losers.length > 0 && ` · ${split ? 'מנצחים' : 'מנצח'} ${losers.slice(0, 2).map(id => `${id === P.id ? 'אותך' : `את ${nick(id)}`} (${V.hands?.[id]?.name ?? ''})`).join(', ')}${losers.length > 2 ? ` ועוד ${losers.length - 2}` : ''}`}</span>
+              : <span className="pwhy">כל השאר עשו Fold, אז הקופה {V.winners[0].id === P.id ? 'שלך' : 'שלו'} בלי להראות קלפים</span>}
+          </motion.div>); })()}
       </AnimatePresence>
-        {myCards && <div className="phero"><PeekCards key={V.handNo} tall={tall} cards={myCards} revealed={V.phase !== 'hand'} faceUp={peekOff} hand={madeHand(myCards, V.board).name} /></div>}
+        {myCards && <div className="phero"><PeekCards key={V.handNo} cards={myCards} folded={!!me?.folded} hl={hlOf} hand={(resolved && V.hands?.[P.id]?.name) || madeHand(myCards, V.board.filter((_, i) => !sd || i < (V.runFrom ?? 5) || tm.cardAt(i) <= tShow)).name} /></div>}
       </div>
 
-      <div className={`pdock ${learn && !helpOff && (advice || handLog.length) ? 'with-help' : ''}`}>
-        {learn && !helpOff && advice && (() => { const t = adviceText(advice); return (
-          <motion.div key={`${V.handNo}-${V.street}-${payNow}`} className="phelp" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="note" aria-label="העוזר האישי">
-            <b><Rich text={t.line} /></b><span><Rich text={t.tip} /></span>
+      <div className={`pdock ${helpCard ? 'with-help' : ''}`}>
+        {helpCard === 'think' && advice && (() => { const t = thinkText(advice); return (
+          <motion.div key={spotKey} className="phelp" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="note" aria-label="המאמן">
+            <small>📘 מהשיעור "{t.from}": <Rich text={t.lesson} /></small>
+            <b><Rich text={t.ask} /></b>
+            {ansOpen ? <span className="pans">{answerText(advice)}</span>
+              : <button className="pans-btn" onClick={() => setShownAns(spotKey)}>תראה לי את התשובה <small>(פחות XP)</small></button>}
           </motion.div>); })()}
-        {learn && !helpOff && !myTurn && V.phase === 'show' && handLog.length > 0 && (
+        {helpCard === 'fb' && fb && (
+          <motion.div key={fb.at} className={`phelp fb ${fb.g}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="status" aria-label="משוב על ההחלטה">
+            <b>{fb.g === 'g' ? '✓ החלטה טובה' : fb.g === 'c' ? '≈ על הגבול' : '✗ כדאי ללמוד מזה'}</b><span>{fb.text}</span>
+          </motion.div>)}
+        {helpCard === 'review' && (
           <motion.div className="phelp review" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="note" aria-label="סיכום היד שלך">
             <b>סיכום היד שלך</b>{handLog.slice(-2).map((x, k) => <span key={k} className={x.g}>{x.g === 'g' ? '✓' : x.g === 'c' ? '≈' : '✗'} {x.text}</span>)}
           </motion.div>)}
@@ -468,12 +519,8 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
               <div className="grab" />
               <button className="icon-btn" onClick={() => setMenu(false)} aria-label="סגור ניהול שולחן">{I.x}</button>
               <h3 className="h-md" style={{ marginBottom: 10 }}>הגדרות</h3>
-              <button className="glass row ptoggle" role="switch" aria-checked={!peekOff} onClick={togglePeek}>
-                <span className="who"><b>הצצה בקלפים</b><span>{peekOff ? 'כבוי: הקלפים שלך פשוט מוצגים פתוחים' : 'פועל: מחזיקים את הקלפים כדי להציץ'}</span></span>
-                <span className={`switch ${peekOff ? '' : 'on'}`} aria-hidden="true"><i /></span>
-              </button>
               {learn && <button className="glass row ptoggle" role="switch" aria-checked={!helpOff} onClick={toggleHelp}>
-                <span className="who"><b>עוזר אישי</b><span>{helpOff ? 'כבוי' : 'פועל: בתור שלך תראה כמה היד חזקה וכמה שווה לשלם, ואחרי כל יד סיכום'}</span></span>
+                <span className="who"><b>המאמן</b><span>{helpOff ? 'כבוי' : 'פועל: בתור שלך שאלה ושיעור מהאפליקציה, ואחרי כל החלטה משוב'}</span></span>
                 <span className={`switch ${helpOff ? '' : 'on'}`} aria-hidden="true"><i /></span>
               </button>}
               {log.length > 0 && <p className="muted" style={{ margin: '8px 2px 0', fontSize: 13 }}>הערב: {log.length} החלטות, {Math.round(log.filter(x => x.g !== 'b').length / log.length * 100)}% טובות · +{earned} XP ומטבעות</p>}
@@ -483,7 +530,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
               <button className="pbtn" style={{ width: '100%', marginBottom: 10 }} onClick={() => {
                 const s = S.current!, t = Date.now();
                 if (!s.paused) { s.paused = true; s.pausedAt = t; }
-                else { s.paused = false; const d = Math.max(0, t - (s.pausedAt ?? t)); if (s.startedAt) s.startedAt += d; s.deadline += d; if (s.phase === 'show') s.nextAt += d; delete s.pausedAt; }
+                else { s.paused = false; const d = Math.max(0, t - (s.pausedAt ?? t)); if (s.startedAt) s.startedAt += d; s.deadline += d; if (s.phase === 'show') { s.nextAt += d; if (s.showAt) s.showAt += d; } delete s.pausedAt; }
                 commit();
               }}>{V.paused ? 'המשך משחק' : 'הפסקה'}</button>
               <div className="field"><label htmlFor="gamt">כמה ז׳יטונים לתת</label><input id="gamt" className="input" inputMode="numeric" value={giftAmt} onChange={e => setGiftAmt(e.target.value.replace(/\D/g, ''))} placeholder={String(V.cfg.stack)} /></div>
