@@ -1,11 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isRed, madeHand, RN, SUITS } from '../engine/cards';
-import { act, BLINDS, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, payIn, prizes, publicView, rebuy, seat, showTimes, startHand, timeoutAction, turnSecs, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
+import { act, BLINDS, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, noteTimeout, payIn, prizes, publicView, rebuy, seat, sitIn, activeCount, showTimes, startHand, timeoutAction, turnSecs, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
 import { answerText, gradeTable, reviewText, spotLesson, tableAdvice, thinkText, type TGrade } from '../engine/coach';
 import { gain, SKILLS, TABLE_XP_DAY, today } from '../game/progress';
 import { sfx } from '../game/sound';
-import { createRoom, getRoom, PUBLIC_URL, track } from '../net/supabase';
+import { closeRoom, createRoom, getRoom, PUBLIC_URL, track } from '../net/supabase';
 import { TableNet, type Cmd, type TPeer } from '../net/table';
 import { Burst } from '../ui/Burst';
 import { Chips } from '../ui/Chips';
@@ -40,6 +40,29 @@ const Opt = <T,>({ label, value, set, opts }: { label: string; value: T; set: (v
   </div>
 );
 
+/** Table settings that can still change in the waiting room, before the first hand. */
+const CFG_OPTS: { key: keyof TCfg; label: string; opts: [number | boolean, string][] }[] = [
+  { key: 'stack', label: 'ז׳יטונים לכל שחקן', opts: [[1000, '1,000'], [2000, '2,000'], [5000, '5,000'], [10000, '10,000']] },
+  { key: 'levelMin', label: 'הבליינדים עולים כל', opts: [[0, 'לא עולים'], [5, '5 דק׳'], [10, '10 דק׳'], [15, '15 דק׳'], [20, '20 דק׳']] },
+  { key: 'rebuys', label: 'ריביי לכל שחקן', opts: [[0, 'בלי'], [1, '1'], [2, '2'], [3, '3'], [-1, 'בלי הגבלה']] },
+  { key: 'buyIn', label: 'דמי כניסה במטבעות', opts: [[0, 'בלי'], [100, '100'], [250, '250'], [500, '500'], [1000, '1,000']] },
+  { key: 'turnSec', label: 'זמן לכל תור', opts: [[20, '20 שנ׳'], [30, '30 שנ׳'], [45, '45 שנ׳'], [60, 'דקה']] },
+  { key: 'learn', label: 'מצב לימוד', opts: [[true, 'פועל'], [false, 'כבוי']] }
+];
+const optText = (key: string, val: unknown) => CFG_OPTS.find(o => o.key === key)?.opts.find(([v]) => v === val)?.[1] ?? String(val);
+/** Apply a waiting-room setting change on the host's state (stacks and entries follow it). */
+function applyCfg(s: TS, key: keyof TCfg, val: number | boolean, who: string) {
+  if (s.handNo > 0 || s.cfg[key] === val) return false;
+  s.cfg = { ...s.cfg, [key]: val } as TCfg;
+  if (key === 'buyIn' && val) s.cfg.rebuys = 0;
+  if (key === 'stack') for (const p of s.players) p.stack = val as number;
+  if (key === 'buyIn') for (const p of s.players) { p.paid = false; p.out = !!val; }
+  s.suggest = (s.suggest || []).filter(x => x.key !== key);
+  s.note = { text: `${who}: ${CFG_OPTS.find(o => o.key === key)?.label} ← ${optText(key, val)}`, at: Date.now() };
+  return true;
+}
+const AWAY_MS = 15000, SIT_OUT_MS = 20000, IDLE_END_MS = 10 * 60000;
+
 export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPlaying: (b: boolean) => void }) {
   const { P, toast, go, update, sync } = useApp();
   const [code, setCode] = useState('');
@@ -72,6 +95,12 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const S = useRef<TS | null>(null);
   const lastBeat = useRef(0);
   const botDue = useRef(0);
+  // host-side liveness: last heartbeat from each player, when they went away, and the last time anyone else was here
+  const beats = useRef(new Map<string, { at: number; vis: boolean }>());
+  const awaySince = useRef(new Map<string, number>());
+  const lastOthers = useRef(Date.now());
+  const grace = useRef(0);
+  const closed = useRef('');
   const lastHost = useMemo(() => { try { return localStorage.getItem(LAST_HOSTED) || ''; } catch { return ''; } }, []);
 
   useEffect(() => { onPlaying(!!code); }, [code, onPlaying]);
@@ -95,7 +124,16 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const hostCmd = useCallback((from: string, c: Cmd) => {
     const s = S.current; if (!s) return;
     if (c.t === 'hello') { net.current?.sendState(publicView(s, Date.now())); const p = s.players.find(x => x.id === from); if (p?.cards && s.phase !== 'lobby') net.current?.sendCards(from, s.handNo, p.cards); return; }
-    if (c.t === 'act' && c.hand === s.handNo && !s.paused && act(s, from, c.a, Date.now())) commit();
+    const now = Date.now();
+    beats.current.set(from, { at: now, vis: c.t === 'beat' ? c.vis : true });
+    if (c.t === 'beat') { const p = s.players.find(x => x.id === from); if (c.vis && p?.sitOut === 'away' && sitIn(s, from)) commit(); return; }
+    if (c.t === 'back' && sitIn(s, from)) commit();
+    if (c.t === 'suggest' && s.handNo === 0 && CFG_OPTS.some(o => o.key === c.key)) {
+      const nick = s.players.find(x => x.id === from)?.nick ?? 'שחקן';
+      s.suggest = [{ id: from, nick, key: c.key, val: c.val, at: now }, ...(s.suggest || []).filter(x => !(x.id === from && x.key === c.key))].slice(0, 6);
+      commit();
+    }
+    if (c.t === 'act' && c.hand === s.handNo && !s.paused && act(s, from, c.a, now)) { const p = s.players.find(x => x.id === from); if (p) p.missed = 0; commit(); }
     if (c.t === 'rebuy' && rebuy(s, from)) commit();
     if ((c.t === 'pay' || c.t === 'unpay') && payIn(s, from, c.t === 'pay')) commit();
   }, [commit]);
@@ -109,7 +147,21 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
       let changed = false;
       if (n) {
         for (const peer of n.peers) if (!s.players.some(p => p.id === peer.id) && seat(s, peer.id, peer.nick)) changed = true;
-        for (const p of s.players) { const away = p.id !== P.id && !n.peers.some(x => x.id === p.id); if (p.away !== away) { p.away = away; changed = true; } }
+        for (const p of s.players) {
+          if (p.id === P.id) continue;
+          // connected = in the channel AND (no heartbeat yet, or a recent heartbeat with the screen on)
+          const b = beats.current.get(p.id), present = n.peers.some(x => x.id === p.id);
+          const away = !present || (!!b && (!b.vis || t - b.at > AWAY_MS));
+          if (p.away !== away) { p.away = away; changed = true; if (away) awaySince.current.set(p.id, t); }
+          if (away && !p.sitOut && p.stack > 0 && !p.out && t - (awaySince.current.get(p.id) ?? t) > SIT_OUT_MS) { p.sitOut = 'away'; changed = true; }
+          if (!away && p.sitOut === 'away') { sitIn(s, p.id); changed = true; }
+          if (!away && !p.out) lastOthers.current = t;
+        }
+        // nobody else has been here for 10 minutes: end the game and close the room
+        if (s.handNo > 0 && s.phase !== 'over' && t > grace.current && t - lastOthers.current > IDLE_END_MS) {
+          s.phase = 'over'; s.turn = null; s.endReason = 'המשחק נסגר אוטומטית: אף שחקן לא היה מחובר 10 דקות';
+          changed = true;
+        }
       }
       if (!s.paused) {
         if (practice && s.phase === 'hand' && s.turn && s.turn !== P.id && t > botDue.current) {
@@ -121,7 +173,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           const action: TAction = mayRaise(s, bot) && (str >= 3 ? roll > .55 : roll > .9) ? { type: 'raise', to: s.curBet + s.minRaise }
             : call && (big ? str < 3 && roll < .85 : str === 0 ? roll < .4 : roll < .1) ? { type: 'fold' } : call ? { type: 'call' } : { type: 'check' };
           act(s, bot.id, action, t); botDue.current = t + 1600; changed = true;
-        } else if (s.phase === 'hand' && t > s.deadline && s.turn) { act(s, s.turn, timeoutAction(s), t); changed = true; }
+        } else if (s.phase === 'hand' && t > s.deadline && s.turn) { const who = s.turn; if (!practice) noteTimeout(s, who); act(s, who, timeoutAction(s), t); changed = true; }
         else if (s.phase === 'show' && t > s.nextAt) { endHand(s); if ((s.phase as string) !== 'over' && startHand(s, rnd, t)) dealOut(); changed = true; }
         else if (s.phase === 'lobby' && s.handNo > 0 && startHand(s, rnd, t)) { dealOut(); changed = true; }
       }
@@ -209,6 +261,40 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const hlOf = (c: number) => (resolved && showdown ? (winBest.has(c) ? 'hl' : 'lo') : '') as '' | 'hl' | 'lo';
 
   useEffect(() => { setRaiseTo(null); if (V?.handNo) sfx.deal(0); }, [V?.handNo]);
+
+  // heartbeat: every 5 s while the screen is on; leave presence when the phone goes to the background
+  useEffect(() => {
+    if (!code || practice) return;
+    const beat = () => { if (!isHost) void net.current?.sendCmd({ t: 'beat', vis: !document.hidden }); };
+    const onVis = () => {
+      const vis = !document.hidden;
+      beat(); void net.current?.setVisible(vis);
+      if (vis) { grace.current = Date.now() + 12000; if (!isHost) void net.current?.sendCmd({ t: 'hello' }); }
+    };
+    beat();
+    const id = setInterval(beat, 5000);
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pagehide', onVis);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', onVis); };
+  }, [code, isHost, practice]);
+
+  // a finished table is closed on the server, so its code cannot be joined again
+  useEffect(() => {
+    if (!isHost || practice || V?.phase !== 'over' || closed.current === code) return;
+    closed.current = code;
+    closeRoom(P, code).catch(() => {});
+    try { if (localStorage.getItem(LAST_HOSTED) === code) localStorage.removeItem(LAST_HOSTED); localStorage.removeItem(saveKey(code)); } catch { /* storage off */ }
+  }, [V?.phase, isHost, practice, code]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // tell everyone who joined, and what the manager changed in the waiting room
+  const seen = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!V) return;
+    const ids = V.players.map(p => p.id);
+    if (seen.current) for (const p of V.players) if (!seen.current.has(p.id) && p.id !== P.id) toast(V.handNo > 0 ? `${p.nick} הצטרף ויקבל קלפים ביד הבאה` : `${p.nick} הצטרף לשולחן`);
+    seen.current = new Set(ids);
+  }, [V?.players.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (V?.note && !isHost && Date.now() + skew - V.note.at < 8000) toast(V.note.text); }, [V?.note?.at]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setRaiseTo(null); if (myTurn) sfx.tick(); }, [myTurn, V?.street]);
   useEffect(() => { if (V?.last) sfx.chip(); }, [V?.last?.id, V?.last?.text, V?.pot]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (resolved && V!.winners.some(w => w.id === P.id)) { sfx.good(); setBurst(b => b + 1); } }, [resolved, V?.handNo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -258,6 +344,11 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     update(p => { p.coins = (p.coins ?? 0) + myPrize.amount; }); sync();
     sfx.good(); setBurst(b => b + 1);
   }, [gameId, myPrize?.amount]); // eslint-disable-line react-hooks/exhaustive-deps
+  const backIn = () => { if (isHost) { if (sitIn(S.current!, P.id)) commit(); } else void net.current?.sendCmd({ t: 'back' }); };
+  const setOpt = (key: keyof TCfg, val: number | boolean) => {
+    if (isHost) { if (applyCfg(S.current!, key, val, 'המנהל')) { commit(); sfx.tap(); } }
+    else { void net.current?.sendCmd({ t: 'suggest', key, val }); toast(`ההצעה נשלחה למנהל: ${optText(key, val)}`); }
+  };
   const doRebuy = () => { if (isHost) { if (rebuy(S.current!, P.id)) commit(); } else net.current?.sendCmd({ t: 'rebuy' }); };
   const emoji = (e: string) => { net.current?.sendCmd({ t: 'emoji', e }); setBubbles(b => ({ ...b, [P.id]: { e, k: Date.now() } })); };
   const leave = () => { net.current?.leave(); net.current = null; S.current = null; setCode(''); setV(null); setMenu(false); setPractice(false); };
@@ -344,6 +435,20 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           </div>
         </motion.div>
       )}
+      {V.phase !== 'over' && (
+        <motion.div className="glass lobby-cfg" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+          <h3 className="h-md">הגדרות המשחק</h3>
+          <p className="muted" style={{ margin: '2px 0 10px', fontSize: 13 }}>{isHost ? 'כולם רואים את השינויים שלך בזמן אמת. שחקנים יכולים להציע, ואתה מאשר.' : 'המנהל בוחר, וכולם רואים בזמן אמת. הקש על אפשרות כדי להציע אותה למנהל.'}</p>
+          {CFG_OPTS.filter(o => !(o.key === 'rebuys' && V.cfg.buyIn)).map(o => (
+            <Opt key={o.key} label={o.label} value={V.cfg[o.key] ?? (o.key === 'buyIn' ? 0 : o.key === 'learn' ? false : undefined)} set={v => setOpt(o.key, v as number | boolean)} opts={o.opts} />
+          ))}
+          {isHost && (V.suggest?.length ?? 0) > 0 && <div className="lobby-sugg">
+            <b>הצעות מהשחקנים</b>
+            {V.suggest!.map(x => <div key={x.id + x.key} className="lobby-sugg-row"><span>💡 {x.nick}: {CFG_OPTS.find(o => o.key === x.key)?.label} ← {optText(x.key, x.val)}</span>
+              <button className="btn gold" onClick={() => setOpt(x.key as keyof TCfg, x.val)}>אשר</button></div>)}
+          </div>}
+        </motion.div>
+      )}
       {V.phase !== 'over' && buyIn > 0 && me && (
         <div className="glass" style={{ padding: 16, borderRadius: 22, marginBottom: 14, textAlign: 'center' }}>
           <h3 className="h-md" style={{ marginBottom: 4 }}>קופת פרסים: <span className="gold-text num">{fmt(buyIn * V.players.filter(p => p.paid).length)}</span> מטבעות</h3>
@@ -354,6 +459,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         </div>
       )}
       {V.phase === 'over' && myPrize && <div className="glass" style={{ padding: 14, borderRadius: 22, marginBottom: 12, textAlign: 'center' }}><b className="gold-text">מקום {myPrize.place}: זכית ב-{fmt(myPrize.amount)} מטבעות 🪙</b></div>}
+      {V.phase === 'over' && V.endReason && <div className="glass" style={{ padding: 12, borderRadius: 18, marginBottom: 12, textAlign: 'center', fontSize: 14 }}>{V.endReason}</div>}
       {V.phase === 'over' && <div style={{ textAlign: 'center' }}><div className="trophy">🏆</div><h1 className="h-xl" style={{ marginBottom: 14 }}>{standings[0]?.nick} ניצח!</h1></div>}
       {V.phase === 'over' && log.length > 0 && (
         <div className="glass" style={{ padding: 16, borderRadius: 22, marginBottom: 14 }}>
@@ -470,7 +576,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
                   {turn && <svg className="pring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" pathLength="100" strokeDasharray={`${Math.min(100, (left / turnSecs(V.cfg)) * 100)} 100`} /></svg>}
                   {turn && <b className="psec num">{Math.ceil(left)}</b>}
                 </div>
-                <div className="pplate"><span className="pname">{isMe ? 'אני' : p.nick}{p.away ? ' · לא מחובר' : ''}</span>
+                <div className="pplate"><span className="pname">{isMe ? 'אני' : p.nick}{p.away ? ' · לא מחובר' : p.sitOut ? ' · בחוץ' : ''}</span>
                   <span className="pstack num">{p.out ? 'בחוץ' : p.allIn && p.inHand && !sd ? 'All-in' : fmt(sd && !resolved ? p.stack - wonBy(p.id) : p.stack)}</span></div>
                 {V.last?.id === p.id && V.phase === 'hand' && <motion.span key={V.last.text + V.pot} className="psaid" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>{V.last.text}</motion.span>}
                 <AnimatePresence>{bub && now - bub.k < 2500 && <motion.span key={bub.k} className="bubble" initial={{ scale: 0, y: 0 }} animate={{ scale: 1.2, y: -30 }} exit={{ opacity: 0 }}>{bub.e}</motion.span>}</AnimatePresence>
@@ -513,7 +619,9 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           <motion.div className="phelp review" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="note" aria-label="סיכום היד שלך">
             <b>סיכום היד שלך</b>{handLog.slice(-2).map((x, k) => <span key={k} className={x.g}>{x.g === 'g' ? '✓' : x.g === 'c' ? '≈' : '✗'} {x.text}</span>)}
           </motion.div>)}
-        {!myCards && <div className="pro-note">{buyIn && me && !me.paid ? 'אתה צופה: המשחק התחיל לפני שנכנסת' : me?.out ? 'יצאת מהמשחק' : me && me.stack === 0 ? 'נגמרו לך הז׳יטונים' : 'תצטרף ביד הבאה'}</div>}
+        {me?.sitOut && !me.out && <div className="psitout"><span>{me.sitOut === 'idle' ? 'דילגנו עליך פעמיים, אז אתה יושב בחוץ.' : 'היית מנותק, אז ישבת בחוץ.'}</span>
+          <button className="pbtn go" onClick={backIn}>חזרתי, תחלק לי</button></div>}
+        {!myCards && !me?.sitOut && <div className="pro-note">{buyIn && me && !me.paid ? 'אתה צופה: המשחק התחיל לפני שנכנסת' : me?.out ? 'יצאת מהמשחק' : me && me.stack === 0 ? 'נגמרו לך הז׳יטונים' : 'תצטרף ביד הבאה'}</div>}
         {me && canRebuy(V as unknown as TS, me as any) && <button className="pbtn go" onClick={doRebuy}>ריביי · {fmt(V.cfg.stack)}</button>}
         {myTurn && me ? (
           raiseTo == null ? (
@@ -537,7 +645,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           )
         ) : (
           <div className="pwait">
-            <div className="pactions waiting-actions"><button className="pbtn" disabled>Fold</button><button className="pbtn" disabled>Check</button><button className="pbtn go" disabled>Raise</button></div><span className="pstatus">{V.paused ? 'המנהל עצר את המשחק' : V.phase === 'show' ? 'היד הבאה מיד' : turnP ? `התור של ${turnP.nick}` : 'מחלקים קלפים'}</span>
+            <div className="pactions waiting-actions"><button className="pbtn" disabled>Fold</button><button className="pbtn" disabled>Check</button><button className="pbtn go" disabled>Raise</button></div><span className="pstatus">{V.paused ? 'המנהל עצר את המשחק' : V.phase === 'show' ? 'היד הבאה מיד' : turnP ? `התור של ${turnP.nick}` : V.phase === 'lobby' && activeCount(V as unknown as TS) < 2 ? 'מחכים שעוד שחקן יחזור לשולחן…' : 'מחלקים קלפים'}</span>
           </div>
         )}
       </div>

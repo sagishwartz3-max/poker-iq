@@ -6,7 +6,9 @@ import type { TAction, View } from '../engine/holdem';
 import { supabase } from './supabase';
 
 export interface TPeer { id: string; nick: string; host: boolean; pub: JsonWebKey; at: number }
-export type Cmd = { t: 'hello' } | { t: 'act'; hand: number; a: TAction } | { t: 'rebuy' } | { t: 'emoji'; e: string } | { t: 'pay' } | { t: 'unpay' };
+export type Cmd = { t: 'hello' } | { t: 'act'; hand: number; a: TAction } | { t: 'rebuy' } | { t: 'emoji'; e: string } | { t: 'pay' } | { t: 'unpay' }
+  /** liveness: sent every few seconds while the screen is on, and once with vis=false when it goes to the background */
+  | { t: 'beat'; vis: boolean } | { t: 'back' } | { t: 'suggest'; key: string; val: number | boolean };
 interface Sealed { iv: string; ct: string }
 type Wire =
   | { k: 'st'; v: View }
@@ -103,6 +105,11 @@ export class TableNet {
     if (c.t === 'emoji') { this.send({ k: 'em', from: this.me.id, e: c.e }); return; }
     const host = this.host;
     if (host) this.send({ k: 'cm', from: this.me.id, ...(await this.seal(host, c)) });
+  }
+  /** Phones keep sockets open in the background: leave presence when the screen is hidden, rejoin when it is back. */
+  async setVisible(v: boolean) {
+    if (!this.ch) return;
+    try { if (v) await this.ch.track({ id: this.me.id, nick: this.me.nick, host: this.isHost, pub: this.pub, at: Date.now() }); else await this.ch.untrack(); } catch { /* reconnecting */ }
   }
   leave() { if (this.ch) { supabase.removeChannel(this.ch); this.ch = null; } }
 }

@@ -64,6 +64,11 @@ export async function deletePlayer(p: Progress) {
   if (error && !/bad secret/.test(error.message)) throw error; // never saved to the server: nothing to delete
 }
 
+/** The host closes a finished table: its code stops working for new joiners. */
+export async function closeRoom(p: Progress, code: string) {
+  await supabase.rpc('poker_room_close', { p_id: p.id, p_secret: p.secret, p_code: code });
+}
+
 /* ---------- Pro waitlist ("fake door" price test) ---------- */
 export async function joinWaitlist(p: Progress, tier: 'plus' | 'pro' | 'elite', price: string, contact: string) {
   await savePlayer(p).catch(() => {});

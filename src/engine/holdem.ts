@@ -17,6 +17,8 @@ export interface TP {
   cards?: number[]; actedBet?: number;
   /** buy-in tables: entered (paid) and the hand number they were knocked out in */
   paid?: boolean; bust?: number;
+  /** sitting out: 'idle' after two timed-out turns (returns with a tap), 'away' while disconnected (returns on reconnect) */
+  sitOut?: 'idle' | 'away'; missed?: number;
 }
 export type Phase = 'lobby' | 'hand' | 'show' | 'over';
 export interface Win { id: string; amount: number; name: string }
@@ -29,6 +31,10 @@ export interface TS {
   /** showdown timeline: when it began, how many board cards were already out before the run-out, the pot being won,
    *  and each shown hand's name and best five cards */
   showAt?: number; runFrom?: number; potWon?: number; hands?: Record<string, { name: string; best: number[] }>;
+  /** waiting-room suggestions from players, and a short note of the manager's last change */
+  suggest?: { id: string; nick: string; key: string; val: number | boolean; at: number }[]; note?: { text: string; at: number };
+  /** why the game ended early, when it did */
+  endReason?: string;
 }
 
 /** Seconds into the showdown when board card i lands, and when the result is revealed. Host and players share it. */
@@ -78,12 +84,12 @@ function nextIdx(s: TS, from: number, ok: (p: TP) => boolean) {
 /** Deals a new hand. Returns false when fewer than two players have chips. */
 export function startHand(s: TS, rng: Rng, now: number): boolean {
   for (const p of s.players) { if (p.pending) { p.stack += p.pending; p.gifts += p.pending; p.pending = 0; } }
-  const ready = s.players.filter(p => p.stack > 0 && !p.out);
+  const ready = s.players.filter(p => p.stack > 0 && !p.out && !p.sitOut);
   if (ready.length < 2) return false;
   if (!s.startedAt) s.startedAt = now;
   if (s.cfg.levelMin > 0) s.level = Math.min(BLINDS.length - 1, Math.floor((now - s.startedAt) / (s.cfg.levelMin * 60000)));
   [s.sb, s.bb] = BLINDS[s.level];
-  for (const p of s.players) { p.bet = 0; p.total = 0; p.folded = false; p.allIn = false; p.acted = false; p.actedBet = 0; p.inHand = p.stack > 0 && !p.out; delete p.cards; }
+  for (const p of s.players) { p.bet = 0; p.total = 0; p.folded = false; p.allIn = false; p.acted = false; p.actedBet = 0; p.inHand = p.stack > 0 && !p.out && !p.sitOut; delete p.cards; }
   s.handNo++; s.street = 0; s.board = []; s.pot = 0; s.winners = []; s.shown = {}; s.hands = {}; s.runFrom = 0; s.potWon = 0; s.last = null; s.phase = 'hand';
   s.btn = nextIdx(s, s.btn < 0 ? Math.floor(rng() * s.players.length) : s.btn, p => p.inHand);
   const deck: number[] = [];
@@ -257,3 +263,20 @@ export function prizes(s: TS): { id: string; place: number; amount: number }[] {
   out[0].amount += pool - out.reduce((t, x) => t + x.amount, 0);
   return out;
 }
+
+/** A turn ran out: after two in a row the player sits out until they tap back in. */
+export function noteTimeout(s: TS, id: string) {
+  const p = s.players.find(x => x.id === id);
+  if (!p) return;
+  p.missed = (p.missed ?? 0) + 1;
+  if (p.missed >= 2 && !p.sitOut) p.sitOut = p.away ? 'away' : 'idle';
+}
+/** Back at the table: dealt in from the next hand. */
+export function sitIn(s: TS, id: string): boolean {
+  const p = s.players.find(x => x.id === id);
+  if (!p || !p.sitOut) return false;
+  p.sitOut = undefined; p.missed = 0;
+  return true;
+}
+/** Players who will be dealt the next hand. */
+export const activeCount = (s: TS) => s.players.filter(p => p.stack > 0 && !p.out && !p.sitOut).length;

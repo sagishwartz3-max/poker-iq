@@ -696,3 +696,9 @@ h1, h2, h3 { margin: 0; font-weight: 800; letter-spacing: -0.01em; text-wrap: ba
 .lib-item b { font-size: 14.5px; } .lib-item small { color: var(--text-2); font-size: 12px; }
 .lib-n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; background: rgba(246,199,90,.15); color: var(--gold-2); margin-bottom: 4px; }
 .lib-item.done { border-color: rgba(62,232,166,.45); }
+
+/* waiting room: live settings and player suggestions */
+.lobby-cfg { padding: 16px; border-radius: 22px; margin-bottom: 14px; }
+.lobby-sugg { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.lobby-sugg-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+.lobby-sugg-row .btn { padding: 6px 14px; min-height: 0; }

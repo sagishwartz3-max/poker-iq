@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { best5, mulberry32, RN, scoreName } from '../src/engine/cards';
-import { act, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, payIn, prizes, publicView, seat, showTimes, startHand, timeoutAction } from '../src/engine/holdem';
+import { act, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, noteTimeout, payIn, prizes, sitIn, activeCount, publicView, seat, showTimes, startHand, timeoutAction } from '../src/engine/holdem';
 
 const s = newTable('TEST', 'a', { ...DEFAULT_CFG, rebuys: 0 });
 for (const id of ['a','b','c']) seat(s, id, id);
@@ -102,4 +102,17 @@ console.log('OK: privacy, invalid actions, pause, short all-in reopening, heads-
   const second = t.players.filter(p => p.stack === 0).sort((a, b) => b.bust! - a.bust!)[0];
   assert.equal(pr[1].id, second.id);
   console.log('OK: buy-in tournament entries, no rebuys or gifts, prize places');
+}
+
+// Sitting out: two timed-out turns sit a player out of the next hands; tapping back deals them in again.
+{
+  const t = newTable('Z', 'a', DEFAULT_CFG); for (const id of ['a', 'b', 'c']) seat(t, id, id);
+  noteTimeout(t, 'c'); assert(!t.players[2].sitOut);
+  noteTimeout(t, 'c'); assert.equal(t.players[2].sitOut, 'idle');
+  assert.equal(activeCount(t), 2);
+  assert(startHand(t, mulberry32(4), 1000));
+  assert(!t.players[2].inHand && !t.players[2].cards);
+  t.players[1].away = true; noteTimeout(t, 'b'); noteTimeout(t, 'b'); assert.equal(t.players[1].sitOut, 'away');
+  assert(sitIn(t, 'c')); assert(!t.players[2].sitOut && t.players[2].missed === 0);
+  console.log('OK: sitting out after missed turns, and back in');
 }
