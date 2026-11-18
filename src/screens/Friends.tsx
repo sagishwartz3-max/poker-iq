@@ -1,12 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isRed, madeHand, RN, SUITS } from '../engine/cards';
-import { act, BLINDS, canRebuy, DEFAULT_CFG, endHand, gift, mayRaise, newTable, noteTimeout, payIn, prizes, publicView, rebuy, seat, sitIn, activeCount, showTimes, startHand, timeoutAction, turnSecs, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
+import { act, BLINDS, canRebuy, DEFAULT_CFG, mayRaise, newTable, prizes, publicView, seat, activeCount, showTimes, startHand, turnSecs, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
+import { applyCmd, CFG_OPTS, optText, type TableCmd } from '../engine/tableops';
 import { answerText, gradeTable, reviewText, spotLesson, tableAdvice, thinkText, type TGrade } from '../engine/coach';
 import { gain, SKILLS, TABLE_XP_DAY, today } from '../game/progress';
 import { sfx } from '../game/sound';
-import { closeRoom, createRoom, getRoom, PUBLIC_URL, track } from '../net/supabase';
-import { TableNet, type Cmd, type TPeer } from '../net/table';
+import { PUBLIC_URL, savePlayer, track } from '../net/supabase';
+import { createTable, tableCmd, TableLive } from '../net/tableApi';
 import { Burst } from '../ui/Burst';
 import { Chips } from '../ui/Chips';
 import { Dial } from '../ui/Dial';
@@ -19,8 +20,6 @@ import { shareLinks } from './Duel';
 import { asset } from '../native';
 
 const rnd = () => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
-const saveKey = (code: string) => `pokeriq-table-${code}`;
-const LAST_HOSTED = 'pokeriq-table-last';
 const fmt = (n: number) => n.toLocaleString('he-IL');
 const EMOJIS = ['👍', '😂', '😱', '🔥', '🤡', '👏'];
 
@@ -40,39 +39,15 @@ const Opt = <T,>({ label, value, set, opts }: { label: string; value: T; set: (v
   </div>
 );
 
-/** Table settings that can still change in the waiting room, before the first hand. */
-const CFG_OPTS: { key: keyof TCfg; label: string; opts: [number | boolean, string][] }[] = [
-  { key: 'stack', label: 'ז׳יטונים לכל שחקן', opts: [[1000, '1,000'], [2000, '2,000'], [5000, '5,000'], [10000, '10,000']] },
-  { key: 'levelMin', label: 'הבליינדים עולים כל', opts: [[0, 'לא עולים'], [5, '5 דק׳'], [10, '10 דק׳'], [15, '15 דק׳'], [20, '20 דק׳']] },
-  { key: 'rebuys', label: 'ריביי לכל שחקן', opts: [[0, 'בלי'], [1, '1'], [2, '2'], [3, '3'], [-1, 'בלי הגבלה']] },
-  { key: 'buyIn', label: 'דמי כניסה במטבעות', opts: [[0, 'בלי'], [100, '100'], [250, '250'], [500, '500'], [1000, '1,000']] },
-  { key: 'turnSec', label: 'זמן לכל תור', opts: [[20, '20 שנ׳'], [30, '30 שנ׳'], [45, '45 שנ׳'], [60, 'דקה']] },
-  { key: 'learn', label: 'מצב לימוד', opts: [[true, 'פועל'], [false, 'כבוי']] }
-];
-const optText = (key: string, val: unknown) => CFG_OPTS.find(o => o.key === key)?.opts.find(([v]) => v === val)?.[1] ?? String(val);
-/** Apply a waiting-room setting change on the host's state (stacks and entries follow it). */
-function applyCfg(s: TS, key: keyof TCfg, val: number | boolean, who: string) {
-  if (s.handNo > 0 || s.cfg[key] === val) return false;
-  s.cfg = { ...s.cfg, [key]: val } as TCfg;
-  if (key === 'buyIn' && val) s.cfg.rebuys = 0;
-  if (key === 'stack') for (const p of s.players) p.stack = val as number;
-  if (key === 'buyIn') for (const p of s.players) { p.paid = false; p.out = !!val; }
-  s.suggest = (s.suggest || []).filter(x => x.key !== key);
-  s.note = { text: `${who}: ${CFG_OPTS.find(o => o.key === key)?.label} ← ${optText(key, val)}`, at: Date.now() };
-  return true;
-}
-const AWAY_MS = 15000, SIT_OUT_MS = 20000, IDLE_END_MS = 10 * 60000;
+const MINE_KEY = 'pokeriq-table-mine';
 
 export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPlaying: (b: boolean) => void }) {
   const { P, toast, go, update, sync } = useApp();
   const [code, setCode] = useState('');
   const [joinCode, setJoinCode] = useState(initialCode || '');
-  const [isHost, setIsHost] = useState(false);
   const [cfg, setCfg] = useState<TCfg>({ ...DEFAULT_CFG, rebuys: 0, learn: true });
   const [V, setV] = useState<View | null>(null);
-  const [skew, setSkew] = useState(0); // host clock minus ours
-  const [peers, setPeers] = useState<TPeer[]>([]);
-  const [status, setStatus] = useState('');
+  const [skew, setSkew] = useState(0); // server clock minus ours
   const [mine, setMine] = useState<{ hand: number; cards: number[] } | null>(null);
   const [practice, setPractice] = useState(false);
   const [gameMode, setGameMode] = useState('טורניר');
@@ -91,149 +66,88 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const [now, setNow] = useState(Date.now());
   const [bubbles, setBubbles] = useState<Record<string, { e: string; k: number }>>({});
   const [burst, setBurst] = useState(0);
-  const net = useRef<TableNet | null>(null);
-  const S = useRef<TS | null>(null);
-  const lastBeat = useRef(0);
+  const [pendingAt, setPendingAt] = useState(-1);
+  const live = useRef<TableLive | null>(null);
+  const S = useRef<TS | null>(null); // the practice table's state (online tables live on the server)
+  const lastAt = useRef(0);
   const botDue = useRef(0);
-  // host-side liveness: last heartbeat from each player, when they went away, and the last time anyone else was here
-  const beats = useRef(new Map<string, { at: number; vis: boolean }>());
-  const awaySince = useRef(new Map<string, number>());
-  const lastOthers = useRef(Date.now());
-  const grace = useRef(0);
-  const closed = useRef('');
-  const lastHost = useMemo(() => { try { return localStorage.getItem(LAST_HOSTED) || ''; } catch { return ''; } }, []);
+  const codeRef = useRef('');
+  const lastHost = useMemo(() => { try { return localStorage.getItem(MINE_KEY) || ''; } catch { return ''; } }, []);
 
   useEffect(() => { onPlaying(!!code); }, [code, onPlaying]);
-  useEffect(() => () => { net.current?.leave(); onPlaying(false); }, [onPlaying]);
+  useEffect(() => () => { live.current?.leave(); onPlaying(false); }, [onPlaying]);
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(id); }, []);
 
-  /* ---------------- host: owns the game state ---------------- */
-  const commit = useCallback(() => {
+  /* ---------------- state from the server (or the practice table) ---------------- */
+  const takeView = useCallback((v: View | undefined, cards?: { hand: number; cards: number[] } | null) => {
+    if (cards) setMine(cards);
+    if (!v || v.at < lastAt.current) return; // an older answer that arrived late
+    lastAt.current = v.at; setV(v); setSkew(v.at - Date.now());
+  }, []);
+  const commitLocal = useCallback(() => {
     const s = S.current; if (!s) return;
-    if (s.code !== 'TRAIN') try { localStorage.setItem(saveKey(s.code), JSON.stringify(s)); } catch { /* storage off */ }
-    const v = publicView(s, Date.now());
-    setV(v); setSkew(0);
     const me = s.players.find(p => p.id === P.id);
-    if (me?.cards) setMine({ hand: s.handNo, cards: me.cards });
-    net.current?.sendState(v); lastBeat.current = Date.now();
-  }, [P.id]);
-  const dealOut = useCallback(() => {
-    const s = S.current!;
-    for (const p of s.players) if (p.cards && p.id !== P.id) net.current?.sendCards(p.id, s.handNo, p.cards);
-  }, [P.id]);
-  const hostCmd = useCallback((from: string, c: Cmd) => {
-    const s = S.current; if (!s) return;
-    if (c.t === 'hello') { net.current?.sendState(publicView(s, Date.now())); const p = s.players.find(x => x.id === from); if (p?.cards && s.phase !== 'lobby') net.current?.sendCards(from, s.handNo, p.cards); return; }
-    const now = Date.now();
-    beats.current.set(from, { at: now, vis: c.t === 'beat' ? c.vis : true });
-    if (c.t === 'beat') { const p = s.players.find(x => x.id === from); if (c.vis && p?.sitOut === 'away' && sitIn(s, from)) commit(); return; }
-    if (c.t === 'back' && sitIn(s, from)) commit();
-    if (c.t === 'suggest' && s.handNo === 0 && CFG_OPTS.some(o => o.key === c.key)) {
-      const nick = s.players.find(x => x.id === from)?.nick ?? 'שחקן';
-      s.suggest = [{ id: from, nick, key: c.key, val: c.val, at: now }, ...(s.suggest || []).filter(x => !(x.id === from && x.key === c.key))].slice(0, 6);
-      commit();
-    }
-    if (c.t === 'act' && c.hand === s.handNo && !s.paused && act(s, from, c.a, now)) { const p = s.players.find(x => x.id === from); if (p) p.missed = 0; commit(); }
-    if (c.t === 'rebuy' && rebuy(s, from)) commit();
-    if ((c.t === 'pay' || c.t === 'unpay') && payIn(s, from, c.t === 'pay')) commit();
-  }, [commit]);
+    takeView(publicView(s, Date.now()), me?.cards ? { hand: s.handNo, cards: me.cards } : null);
+  }, [P.id, takeView]);
+  /** One command to the table: the server for online tables, the device for the practice table. */
+  const send = useCallback(async (cmd: TableCmd, quiet = false) => {
+    if (practice) { const s = S.current; if (!s) return false; const r = applyCmd(s, P.id, cmd, Date.now(), rnd, false); commitLocal(); if (!r.ok && !quiet && r.error) toast(r.error); return r.ok; }
+    const c = codeRef.current; if (!c) return false;
+    const r = await tableCmd(P, c, cmd);
+    takeView(r.view, r.mine);
+    if (!r.ok && !quiet && r.error && cmd.t !== 'tick' && cmd.t !== 'beat') toast(r.error);
+    return !!r.ok;
+  }, [practice, P, commitLocal, takeView, toast]);
 
-  // the host's game loop
+  // practice table: bots play, and time passes, on the device
   useEffect(() => {
-    if (!isHost || !code) return;
+    if (!practice || !code) return;
     const id = setInterval(() => {
-      const s = S.current, n = net.current; if (!s || (!n && !practice)) return;
+      const s = S.current; if (!s) return;
       const t = Date.now();
-      let changed = false;
-      if (n) {
-        for (const peer of n.peers) if (!s.players.some(p => p.id === peer.id) && seat(s, peer.id, peer.nick)) changed = true;
-        for (const p of s.players) {
-          if (p.id === P.id) continue;
-          // connected = in the channel AND (no heartbeat yet, or a recent heartbeat with the screen on)
-          const b = beats.current.get(p.id), present = n.peers.some(x => x.id === p.id);
-          const away = !present || (!!b && (!b.vis || t - b.at > AWAY_MS));
-          if (p.away !== away) { p.away = away; changed = true; if (away) awaySince.current.set(p.id, t); }
-          if (away && !p.sitOut && p.stack > 0 && !p.out && t - (awaySince.current.get(p.id) ?? t) > SIT_OUT_MS) { p.sitOut = 'away'; changed = true; }
-          if (!away && p.sitOut === 'away') { sitIn(s, p.id); changed = true; }
-          if (!away && !p.out) lastOthers.current = t;
-        }
-        // nobody else has been here for 10 minutes: end the game and close the room
-        if (s.handNo > 0 && s.phase !== 'over' && t > grace.current && t - lastOthers.current > IDLE_END_MS) {
-          s.phase = 'over'; s.turn = null; s.endReason = 'המשחק נסגר אוטומטית: אף שחקן לא היה מחובר 10 דקות';
-          changed = true;
-        }
+      if (!s.paused && s.phase === 'hand' && s.turn && s.turn !== P.id && t > botDue.current) {
+        const bot = s.players.find(p => p.id === s.turn)!;
+        const call = Math.max(0, s.curBet - bot.bet), roll = rnd();
+        // practice bots play their cards: weak hands give up against big bets, strong ones raise more often
+        const str = bot.cards ? madeHand(bot.cards, s.board).strength : 1;
+        const big = call > Math.max(s.bb * 6, (bot.stack + bot.bet) * 0.25);
+        const action: TAction = mayRaise(s, bot) && (str >= 3 ? roll > .55 : roll > .9) ? { type: 'raise', to: s.curBet + s.minRaise }
+          : call && (big ? str < 3 && roll < .85 : str === 0 ? roll < .4 : roll < .1) ? { type: 'fold' } : call ? { type: 'call' } : { type: 'check' };
+        act(s, bot.id, action, t); botDue.current = t + 1600;
       }
-      if (!s.paused) {
-        if (practice && s.phase === 'hand' && s.turn && s.turn !== P.id && t > botDue.current) {
-          const bot = s.players.find(p => p.id === s.turn)!;
-          const call = Math.max(0, s.curBet - bot.bet), roll = rnd();
-          // practice bots play their cards: weak hands give up against big bets, strong ones raise more often
-          const str = bot.cards ? madeHand(bot.cards, s.board).strength : 1;
-          const big = call > Math.max(s.bb * 6, (bot.stack + bot.bet) * 0.25);
-          const action: TAction = mayRaise(s, bot) && (str >= 3 ? roll > .55 : roll > .9) ? { type: 'raise', to: s.curBet + s.minRaise }
-            : call && (big ? str < 3 && roll < .85 : str === 0 ? roll < .4 : roll < .1) ? { type: 'fold' } : call ? { type: 'call' } : { type: 'check' };
-          act(s, bot.id, action, t); botDue.current = t + 1600; changed = true;
-        } else if (s.phase === 'hand' && t > s.deadline && s.turn) { const who = s.turn; if (!practice) noteTimeout(s, who); act(s, who, timeoutAction(s), t); changed = true; }
-        else if (s.phase === 'show' && t > s.nextAt) { endHand(s); if ((s.phase as string) !== 'over' && startHand(s, rnd, t)) dealOut(); changed = true; }
-        else if (s.phase === 'lobby' && s.handNo > 0 && startHand(s, rnd, t)) { dealOut(); changed = true; }
-      }
-      if (changed) commit(); else if (n && t - lastBeat.current > 4000) { n.sendState(publicView(s, t)); lastBeat.current = t; }
+      applyCmd(s, P.id, { t: 'tick' }, t, rnd, false);
+      commitLocal();
     }, 400);
     return () => clearInterval(id);
-  }, [isHost, code, commit, dealOut, P.id, practice]);
+  }, [practice, code, commitLocal, P.id]);
 
   /* ---------------- joining ---------------- */
   const [busy, setBusy] = useState(false);
   const enter = async (codeIn: string | null) => {
     if (busy) return;
-    if (!crypto?.subtle) { toast('הדפדפן הזה לא תומך בהצפנה שהשולחן צריך'); return; }
     setBusy(true);
-    let rm;
-    try { rm = codeIn ? await getRoom(codeIn, 'table') : await createRoom(P, 'table'); }
-    catch { setBusy(false); toast('אין חיבור לשרת. בדוק שיש אינטרנט ונסה שוב.'); return; }
-    if (!rm) { setBusy(false); toast('אין שולחן עם הקוד הזה. בדוק את הקוד או בקש קישור חדש.'); return; }
-    const c = rm.code, host = rm.hostId === P.id;
-    net.current?.leave();
-    S.current = null;
-    if (host) {
-      try { const saved = JSON.parse(localStorage.getItem(saveKey(c)) || 'null') as TS | null; if (saved && saved.hostId === P.id) { S.current = saved; if (saved.phase === 'hand') saved.deadline = Date.now() + turnSecs(saved.cfg) * 1000; } } catch { /* no save */ }
-      if (!S.current) { S.current = newTable(c, P.id, cfg); seat(S.current, P.id, P.nick || 'שחקן'); }
-      try { localStorage.setItem(LAST_HOSTED, c); } catch { /* storage off */ }
-    }
-    setPractice(false); setIsHost(host); setCode(c); setV(null); setMine(null); setPeers([]);
-    setLog([]); setEarned(0); setFb(null);
-    const n = new TableNet(c, rm.channel, { id: P.id, nick: P.nick || 'שחקן' }, host, {
-      onPeers: setPeers, onStatus: setStatus,
-      onState: v => { setV(v); setSkew(v.at - Date.now()); },
-      onCards: (hand, cards) => setMine({ hand, cards }),
-      onCmd: hostCmd,
-      onEmoji: (from, e) => setBubbles(b => ({ ...b, [from]: { e, k: Date.now() } }))
-    });
-    net.current = n;
     try {
-      await n.join();
-      if (host) commit();
-      track(P, 'table_enter', { host });
-    } catch {
-      n.leave(); net.current = null; setCode('');
-      toast('החיבור לשולחן נכשל. נסה שוב.');
+      await savePlayer(P).catch(() => {}); // the server knows this player before the table does
+      const r = codeIn ? await tableCmd(P, codeIn.toUpperCase(), { t: 'join', nick: P.nick || 'שחקן' }) : await createTable(P, cfg);
+      if (!r.ok || !r.view || !r.channel) { toast(r.error || 'החיבור לשולחן נכשל. נסה שוב.'); return; }
+      const c = r.code || codeIn!.toUpperCase();
+      if (!codeIn) try { localStorage.setItem(MINE_KEY, c); } catch { /* storage off */ }
+      live.current?.leave();
+      S.current = null; lastAt.current = 0; codeRef.current = c;
+      setPractice(false); setCode(c); setMine(null); setLog([]); setEarned(0); setFb(null);
+      takeView(r.view, r.mine);
+      const l = new TableLive(r.channel, v => takeView(v), (from, e) => setBubbles(b => ({ ...b, [from]: { e, k: Date.now() } })));
+      l.join(); live.current = l;
+      track(P, 'table_enter', { host: r.view.hostId === P.id });
     } finally { setBusy(false); }
   };
   useEffect(() => { if (initialCode && initialCode.length === 5) enter(initialCode.toUpperCase()); /* eslint-disable-next-line */ }, []);
-
-  // players: say hello until the host answers with the table state
-  const hostHere = peers.some(p => p.host);
-  useEffect(() => {
-    if (isHost || !code || !hostHere) return;
-    net.current?.sendCmd({ t: 'hello' });
-    if (V) return;
-    const id = setInterval(() => net.current?.sendCmd({ t: 'hello' }), 2000);
-    return () => clearInterval(id);
-  }, [isHost, code, hostHere, !!V]); // eslint-disable-line react-hooks/exhaustive-deps
-
   /* ---------------- derived view ---------------- */
   const me = V?.players.find(p => p.id === P.id);
-  const myTurn = !!V && V.phase === 'hand' && V.turn === P.id && !V.paused;
+  const isHost = !!V && V.hostId === P.id; // the manager: settings, start, pause, gifts
+  const mgr = V?.players.find(p => p.id === V.hostId);
+  // after acting, the buttons wait for the server's answer (no double taps, no stale actions)
+  const myTurn = !!V && V.phase === 'hand' && V.turn === P.id && !V.paused && pendingAt !== V.at;
   const myCards = V && mine && mine.hand === V.handNo && me?.inHand ? mine.cards : null;
   const toCall = V && me ? Math.max(0, V.curBet - me.bet) : 0;
   const maxTo = me ? me.bet + me.stack : 0;
@@ -262,29 +176,28 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
 
   useEffect(() => { setRaiseTo(null); if (V?.handNo) sfx.deal(0); }, [V?.handNo]);
 
-  // heartbeat: every 5 s while the screen is on; leave presence when the phone goes to the background
+  // heartbeat: every 8 s while the screen is on, and right away when the phone goes to the background or comes back
   useEffect(() => {
     if (!code || practice) return;
-    const beat = () => { if (!isHost) void net.current?.sendCmd({ t: 'beat', vis: !document.hidden }); };
-    const onVis = () => {
-      const vis = !document.hidden;
-      beat(); void net.current?.setVisible(vis);
-      if (vis) { grace.current = Date.now() + 12000; if (!isHost) void net.current?.sendCmd({ t: 'hello' }); }
-    };
+    const beat = () => void send({ t: 'beat', vis: !document.hidden }, true);
+    const onVis = () => beat();
     beat();
-    const id = setInterval(beat, 5000);
+    const id = setInterval(() => { if (!document.hidden) beat(); }, 8000);
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('pagehide', onVis);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', onVis); };
-  }, [code, isHost, practice]);
-
-  // a finished table is closed on the server, so its code cannot be joined again
+  }, [code, practice, send]);
+  // the server moves only when asked: whoever is here asks it at the moment a turn clock runs out or the next hand is due
   useEffect(() => {
-    if (!isHost || practice || V?.phase !== 'over' || closed.current === code) return;
-    closed.current = code;
-    closeRoom(P, code).catch(() => {});
-    try { if (localStorage.getItem(LAST_HOSTED) === code) localStorage.removeItem(LAST_HOSTED); localStorage.removeItem(saveKey(code)); } catch { /* storage off */ }
-  }, [V?.phase, isHost, practice, code]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!code || practice || !V || V.phase === 'over' || V.paused) return;
+    const due = V.phase === 'hand' ? V.deadline : V.phase === 'show' ? V.nextAt : V.handNo > 0 ? V.at + 3000 : 0;
+    if (!due) return;
+    const wait = Math.max(300, due - (Date.now() + skew)) + 250 + Math.random() * 500;
+    const id = setTimeout(() => { if (!document.hidden) void send({ t: 'tick' }, true); }, wait);
+    return () => clearTimeout(id);
+  }, [code, practice, V?.phase, V?.deadline, V?.nextAt, V?.handNo, V?.paused, V?.at, skew, send]); // eslint-disable-line react-hooks/exhaustive-deps
+  // a new hand: fetch my two cards if the push did not bring them
+  useEffect(() => { if (!practice && code && V?.phase === 'hand' && me?.inHand && mine?.hand !== V.handNo && !document.hidden) void send({ t: 'beat', vis: true }, true); }, [V?.handNo, V?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // tell everyone who joined, and what the manager changed in the waiting room
   const seen = useRef<Set<string> | null>(null);
@@ -319,13 +232,13 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const doAct = (a: TAction) => {
     grade(a);
     sfx.tap(); setRaiseTo(null);
-    if (isHost) { const s = S.current!; if (act(s, P.id, a, Date.now())) commit(); }
-    else net.current?.sendCmd({ t: 'act', hand: V!.handNo, a });
+    setPendingAt(V!.at);
+    void send({ t: 'act', hand: V!.handNo, a }, true).then(ok => { if (!ok) setPendingAt(-1); });
   };
   const buyIn = V?.cfg.buyIn ?? 0;
   const doPay = (on: boolean) => {
     if (on && (P.coins ?? 0) < buyIn) { toast('אין לך מספיק מטבעות לדמי הכניסה'); return; }
-    if (isHost) { if (payIn(S.current!, P.id, on)) commit(); } else net.current?.sendCmd({ t: on ? 'pay' : 'unpay' });
+    void send({ t: on ? 'pay' : 'unpay' });
   };
   // the entry leaves the wallet once, when the first hand is dealt; prizes arrive once, when the game is over
   const gameId = V ? `${V.code}-${V.startedAt}` : '';
@@ -344,20 +257,21 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     update(p => { p.coins = (p.coins ?? 0) + myPrize.amount; }); sync();
     sfx.good(); setBurst(b => b + 1);
   }, [gameId, myPrize?.amount]); // eslint-disable-line react-hooks/exhaustive-deps
-  const backIn = () => { if (isHost) { if (sitIn(S.current!, P.id)) commit(); } else void net.current?.sendCmd({ t: 'back' }); };
+  const backIn = () => void send({ t: 'back' });
   const setOpt = (key: keyof TCfg, val: number | boolean) => {
-    if (isHost) { if (applyCfg(S.current!, key, val, 'המנהל')) { commit(); sfx.tap(); } }
-    else { void net.current?.sendCmd({ t: 'suggest', key, val }); toast(`ההצעה נשלחה למנהל: ${optText(key, val)}`); }
+    if (isHost) { sfx.tap(); void send({ t: 'cfg', key, val }); }
+    else void send({ t: 'suggest', key, val }).then(ok => ok && toast(`ההצעה נשלחה למנהל: ${optText(key, val)}`));
   };
-  const doRebuy = () => { if (isHost) { if (rebuy(S.current!, P.id)) commit(); } else net.current?.sendCmd({ t: 'rebuy' }); };
-  const emoji = (e: string) => { net.current?.sendCmd({ t: 'emoji', e }); setBubbles(b => ({ ...b, [P.id]: { e, k: Date.now() } })); };
-  const leave = () => { net.current?.leave(); net.current = null; S.current = null; setCode(''); setV(null); setMenu(false); setPractice(false); };
+  const doRebuy = () => void send({ t: 'rebuy' });
+  const emoji = (e: string) => { live.current?.emoji(P.id, e); setBubbles(b => ({ ...b, [P.id]: { e, k: Date.now() } })); };
+  const leave = () => { live.current?.leave(); live.current = null; S.current = null; codeRef.current = ''; lastAt.current = 0; setCode(''); setV(null); setMenu(false); setPractice(false); };
   const train = () => {
     const s = newTable('TRAIN', P.id, { ...cfg, buyIn: 0 });
     seat(s, P.id, P.nick || 'אני');
     ['נועם · בוט', 'מיה · בוט', 'אורי · בוט', 'דניאל · בוט', 'עומר · בוט'].forEach((nick, i) => seat(s, `bot-${i}`, nick));
-    S.current = s; setPractice(true); setIsHost(true); setCode('TRAIN'); setPeers([]); setLog([]); setEarned(0); setFb(null);
-    startHand(s, rnd, Date.now()); botDue.current = Date.now() + 1600; commit();
+    S.current = s; lastAt.current = 0; codeRef.current = ''; setPractice(true); setCode('TRAIN'); setLog([]); setEarned(0); setFb(null);
+    startHand(s, rnd, Date.now()); botDue.current = Date.now() + 1600;
+    takeView(publicView(s, Date.now()), s.players[0].cards ? { hand: s.handNo, cards: s.players[0].cards } : null);
   };
 
   const link = `${PUBLIC_URL}?table=${code}`;
@@ -400,8 +314,8 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   /* ---------------- connecting ---------------- */
   if (!V) return (
     <div className="screen">
-      <div className="play-top"><button className="icon-btn" onClick={leave} aria-label="יציאה">{I.x}</button><div className="play-title"><b>שולחן {code}</b><span>{status === 'SUBSCRIBED' ? 'מחובר' : 'מתחבר…'}</span></div></div>
-      <div className="glass empty" style={{ marginTop: 30 }}>{hostHere ? 'מקבל את מצב השולחן…' : 'מחכים למנהל השולחן. אם הקוד שגוי, חזור ונסה שוב.'}</div>
+      <div className="play-top"><button className="icon-btn" onClick={leave} aria-label="יציאה">{I.x}</button><div className="play-title"><b>שולחן {code}</b><span>מתחבר…</span></div></div>
+      <div className="glass empty" style={{ marginTop: 30 }}>מקבל את מצב השולחן…</div>
     </div>
   );
 
@@ -485,8 +399,8 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         ))}
       </div>
       <div className="modal-actions">
-        {isHost && V.phase !== 'over' && <button className="btn gold wide" disabled={ready < 2} onClick={() => { const s = S.current!; if (startHand(s, rnd, Date.now())) { dealOut(); commit(); track(P, 'table_start', { players: s.players.length }); } }}>{ready < 2 ? (buyIn ? 'מחכים שלפחות 2 ייכנסו…' : 'מחכים לעוד שחקן…') : 'התחל משחק'}</button>}
-        {!isHost && V.phase !== 'over' && <p className="muted" style={{ textAlign: 'center' }}>{hostHere ? 'מחכים שהמנהל יתחיל…' : 'המנהל התנתק. מחכים שיחזור…'}</p>}
+        {isHost && V.phase !== 'over' && <button className="btn gold wide" disabled={ready < 2} onClick={() => void send({ t: 'start' }).then(ok => ok && track(P, 'table_start', { players: V.players.length }))}>{ready < 2 ? (buyIn ? 'מחכים שלפחות 2 ייכנסו…' : 'מחכים לעוד שחקן…') : 'התחל משחק'}</button>}
+        {!isHost && V.phase !== 'over' && <p className="muted" style={{ textAlign: 'center' }}>{mgr?.away ? 'המנהל לא מחובר כרגע. מחכים שיחזור ויתחיל…' : 'מחכים שהמנהל יתחיל…'}</p>}
         {V.phase === 'over' && <a className="btn wa wide" href={shareLinks(`סיימנו ערב פוקר ב-Poker IQ. ${standings[0]?.nick} לקח את הכול 🏆`, PUBLIC_URL).wa} target="_blank" rel="noreferrer">{I.wa} שתף תוצאות</a>}
         {V.phase === 'over' && <button className="btn wide" onClick={leave}>יציאה</button>}
       </div>
@@ -532,7 +446,6 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         <div className="pro-pill room-blinds"><span>בליינדים <b className="num">{V.sb}/{V.bb}</b></span>{V.paused ? <em>הפסקה</em> : V.levelEnds ? <em className="num">{mmss}</em> : <em className="num">יד {V.handNo}</em>}</div>
         <div className="room-wallet"><span className="wallet-coins" aria-hidden="true"><i /><i /><i /></span><div><b className="num">{fmt(P.coins ?? 0)}</b><small>המטבעות שלי</small></div></div>
       </div>
-      {!hostHere && !isHost && <div className="pro-note">המנהל התנתק. המשחק ימשיך כשיחזור.</div>}
 
       <div className="ptable">
         <div className="rail"><div className="pfelt"><div className="pfelt-line" /><div className="pfelt-logo">POKER IQ</div></div></div>
@@ -672,24 +585,19 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
               {log.length > 0 && <p className="muted" style={{ margin: '8px 2px 0', fontSize: 13 }}>הערב: {log.length} החלטות, {Math.round(log.filter(x => x.g !== 'b').length / log.length * 100)}% טובות · +{earned} XP ומטבעות</p>}
               {isHost && <>
               <h3 className="h-md" style={{ margin: '18px 0 10px' }}>ניהול השולחן</h3>
-              <button className="pbtn" style={{ width: '100%', marginBottom: 10 }} onClick={() => { const s = S.current!; s.cfg = { ...s.cfg, learn: !s.cfg.learn }; commit(); toast(s.cfg.learn ? 'מצב לימוד הופעל לכל השולחן' : 'מצב לימוד כובה'); }}>{learn ? 'כבה מצב לימוד לכולם' : 'הפעל מצב לימוד לכולם'}</button>
-              <button className="pbtn" style={{ width: '100%', marginBottom: 10 }} onClick={() => {
-                const s = S.current!, t = Date.now();
-                if (!s.paused) { s.paused = true; s.pausedAt = t; }
-                else { s.paused = false; const d = Math.max(0, t - (s.pausedAt ?? t)); if (s.startedAt) s.startedAt += d; s.deadline += d; if (s.phase === 'show') { s.nextAt += d; if (s.showAt) s.showAt += d; } delete s.pausedAt; }
-                commit();
-              }}>{V.paused ? 'המשך משחק' : 'הפסקה'}</button>
+              <button className="pbtn" style={{ width: '100%', marginBottom: 10 }} onClick={() => void send({ t: 'learn' }).then(ok => ok && toast(learn ? 'מצב לימוד כובה' : 'מצב לימוד הופעל לכל השולחן'))}>{learn ? 'כבה מצב לימוד לכולם' : 'הפעל מצב לימוד לכולם'}</button>
+              <button className="pbtn" style={{ width: '100%', marginBottom: 10 }} onClick={() => void send({ t: 'pause' })}>{V.paused ? 'המשך משחק' : 'הפסקה'}</button>
               {!buyIn && <div className="field"><label htmlFor="gamt">כמה ז׳יטונים לתת</label><input id="gamt" className="input" inputMode="numeric" value={giftAmt} onChange={e => setGiftAmt(e.target.value.replace(/\D/g, ''))} placeholder={String(V.cfg.stack)} /></div>}
               <div className="rows" style={{ marginBottom: 12 }}>
                 {V.players.map(p => (
                   <div key={p.id} className="glass row" style={{ gridTemplateColumns: '1fr auto auto' }}>
                     <div className="who"><b>{p.nick}</b><span>{fmt(p.stack)}{p.pending ? ` (+${fmt(p.pending)} אחרי היד)` : ''} · {p.buyIns} קניות</span></div>
-                    {!buyIn && <button className="pbtn go sm" onClick={() => { if (gift(S.current!, p.id, Number(giftAmt) || V.cfg.stack)) { commit(); toast(`${p.nick} קיבל ${fmt(Number(giftAmt) || V.cfg.stack)}`); } }}>תן</button>}
-                    {p.id !== P.id && <button className="pbtn sm" disabled={V.phase === 'hand'} title={V.phase === 'hand' ? 'הוצאת שחקן אפשרית רק בין ידיים' : undefined} onClick={() => { const s = S.current!, x = s.players.find(q => q.id === p.id)!; x.out = !x.out; commit(); }}>{p.out ? 'החזר' : 'הוצא'}</button>}
+                    {!buyIn && <button className="pbtn go sm" onClick={() => void send({ t: 'gift', id: p.id, amount: Number(giftAmt) || V.cfg.stack }).then(ok => ok && toast(`${p.nick} קיבל ${fmt(Number(giftAmt) || V.cfg.stack)}`))}>תן</button>}
+                    {p.id !== P.id && <button className="pbtn sm" disabled={V.phase === 'hand'} title={V.phase === 'hand' ? 'הוצאת שחקן אפשרית רק בין ידיים' : undefined} onClick={() => void send({ t: 'kick', id: p.id })}>{p.out ? 'החזר' : 'הוצא'}</button>}
                   </div>
                 ))}
               </div>
-              <button className="pbtn" style={{ width: '100%', color: 'var(--bad)' }} onClick={() => { const s = S.current!; if (s.phase !== 'hand') { s.phase = 'over'; commit(); setMenu(false); } else toast('אפשר לסיים בין ידיים. עצור את המשחק או חכה לסוף היד.'); }}>סיים משחק והצג תוצאות</button>
+              <button className="pbtn" style={{ width: '100%', color: 'var(--bad)' }} onClick={() => void send({ t: 'end' }).then(ok => ok && setMenu(false))}>סיים משחק והצג תוצאות</button>
               </>}
             </motion.div>
           </>

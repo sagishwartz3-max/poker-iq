@@ -22,6 +22,7 @@
 
 ## טכנולוגיה
 - React + TypeScript + Vite, אנימציות עם framer-motion.
+- שולחן החברים רץ בשרת: פונקציית Edge בשם `poker-table` (בתיקייה `supabase/functions/poker-table`) מחזיקה את מצב השולחן בטבלה `poker_table_state`, בודקת כל פעולה עם אותו מנוע (`src/engine/holdem.ts` + `tableops.ts`), ושולחת לכולם את המצב הציבורי בערוץ Realtime. כל שחקן מקבל רק את הקלפים שלו. אחרי שינוי במנוע מריצים `node scripts/sync-edge.mjs` ופורסים מחדש את הפונקציה. שולחן האימון מול בוטים רץ במכשיר.
 - Supabase: טבלת `poker_players` (הדירוג) ופונקציות `poker_save_player` / `poker_record_match`. חדרי ראש בראש עובדים על Supabase Realtime (broadcast + presence).
 - אפליקציה: React Native + Expo בתיקייה `mobile/`. המשחק עצמו (אותו קוד של האתר, `src/`) רץ בתוכה כ-Expo DOM Component, וניתוח, רטט, קישורים ובקשת דירוג עובדים נייטיב.
 - ניתוח מוצר: PostHog (באתר `posthog-js`, באפליקציה `posthog-react-native`). בלי מפתח לא נשלח כלום.

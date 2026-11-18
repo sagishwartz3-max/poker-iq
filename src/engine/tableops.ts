@@ -1,0 +1,119 @@
+// Every change to a friends' table goes through applyCmd: the server runs it for online tables, the device runs it
+// for the practice table. Pure functions over the table state (plus the clock and a random source).
+import type { Rng } from './cards';
+import { act, activeCount, endHand, gift, noteTimeout, payIn, rebuy, seat, sitIn, startHand, timeoutAction, type TAction, type TCfg, type TS } from './holdem';
+
+export type TableCmd =
+  | { t: 'join'; nick: string }
+  | { t: 'act'; hand: number; a: TAction }
+  | { t: 'rebuy' } | { t: 'pay' } | { t: 'unpay' } | { t: 'back' }
+  /** liveness: sent every few seconds while the screen is on, and with vis=false when it goes to the background */
+  | { t: 'beat'; vis: boolean }
+  | { t: 'suggest'; key: string; val: number | boolean }
+  /** manager only */
+  | { t: 'cfg'; key: string; val: number | boolean } | { t: 'start' } | { t: 'pause' } | { t: 'learn' }
+  | { t: 'gift'; id: string; amount: number } | { t: 'kick'; id: string } | { t: 'end' }
+  /** nothing to do but let time pass: turn clocks, the next hand, sitting out, closing an empty table */
+  | { t: 'tick' };
+
+/** Table settings that can still change in the waiting room, before the first hand. */
+export const CFG_OPTS: { key: keyof TCfg; label: string; opts: [number | boolean, string][] }[] = [
+  { key: 'stack', label: 'ז׳יטונים לכל שחקן', opts: [[1000, '1,000'], [2000, '2,000'], [5000, '5,000'], [10000, '10,000']] },
+  { key: 'levelMin', label: 'הבליינדים עולים כל', opts: [[0, 'לא עולים'], [5, '5 דק׳'], [10, '10 דק׳'], [15, '15 דק׳'], [20, '20 דק׳']] },
+  { key: 'rebuys', label: 'ריביי לכל שחקן', opts: [[0, 'בלי'], [1, '1'], [2, '2'], [3, '3'], [-1, 'בלי הגבלה']] },
+  { key: 'buyIn', label: 'דמי כניסה במטבעות', opts: [[0, 'בלי'], [100, '100'], [250, '250'], [500, '500'], [1000, '1,000']] },
+  { key: 'turnSec', label: 'זמן לכל תור', opts: [[20, '20 שנ׳'], [30, '30 שנ׳'], [45, '45 שנ׳'], [60, 'דקה']] },
+  { key: 'learn', label: 'מצב לימוד', opts: [[true, 'פועל'], [false, 'כבוי']] }
+];
+export const optText = (key: string, val: unknown) => CFG_OPTS.find(o => o.key === key)?.opts.find(([v]) => v === val)?.[1] ?? String(val);
+const validOpt = (key: string, val: unknown) => !!CFG_OPTS.find(o => o.key === key)?.opts.some(([v]) => v === val);
+
+export const AWAY_MS = 15000, SIT_OUT_MS = 20000, IDLE_END_MS = 10 * 60000;
+
+/** Waiting-room setting change (stacks and entries follow it). */
+export function applyCfg(s: TS, key: keyof TCfg, val: number | boolean, who: string) {
+  if (s.handNo > 0 || s.cfg[key] === val || !validOpt(key, val)) return false;
+  s.cfg = { ...s.cfg, [key]: val } as TCfg;
+  if (key === 'buyIn' && val) s.cfg.rebuys = 0;
+  if (key === 'stack') for (const p of s.players) p.stack = val as number;
+  if (key === 'buyIn') for (const p of s.players) { p.paid = false; p.out = !!val; }
+  s.suggest = (s.suggest || []).filter(x => x.key !== key);
+  s.note = { text: `${who}: ${CFG_OPTS.find(o => o.key === key)?.label} ← ${optText(key, val)}`, at: Date.now() };
+  return true;
+}
+
+/**
+ * Apply one player's command, then let time pass. `live` turns on connection tracking (online tables);
+ * the practice table runs without it. Returns an error text for refused commands.
+ */
+export function applyCmd(s: TS, from: string, c: TableCmd, now: number, rng: Rng, live = true): { ok: boolean; error?: string } {
+  const p = s.players.find(x => x.id === from);
+  // presence: heartbeats and real actions count; an automatic 'tick' from a phone in the background does not
+  if (p && live && c.t !== 'tick') { p.seen = now; p.vis = c.t === 'beat' ? c.vis : true; }
+  const manager = from === s.hostId;
+  let ok = true, error: string | undefined;
+  const need = (cond: boolean, msg: string) => { if (!cond) { ok = false; error = msg; } return cond; };
+  switch (c.t) {
+    case 'join': {
+      const q = seat(s, from, String(c.nick || 'שחקן').slice(0, 18));
+      if (need(!!q, s.phase === 'over' ? 'המשחק כבר נגמר' : 'השולחן מלא') && live) { q!.seen = now; q!.vis = true; }
+      break;
+    }
+    case 'act': if (need(c.hand === s.handNo && !s.paused && act(s, from, c.a, now), 'הפעולה לא אפשרית עכשיו') && p) p.missed = 0; break;
+    case 'rebuy': need(rebuy(s, from), 'ריביי לא אפשרי'); break;
+    case 'pay': case 'unpay': need(payIn(s, from, c.t === 'pay'), 'אי אפשר לשנות כניסה אחרי שהמשחק התחיל'); break;
+    case 'back': sitIn(s, from); break;
+    case 'beat': if (c.vis && p?.sitOut === 'away') sitIn(s, from); break;
+    case 'suggest':
+      if (need(s.handNo === 0 && validOpt(c.key, c.val) && !!p, 'אפשר להציע רק לפני תחילת המשחק'))
+        s.suggest = [{ id: from, nick: p!.nick, key: c.key, val: c.val, at: now }, ...(s.suggest || []).filter(x => !(x.id === from && x.key === c.key))].slice(0, 6);
+      break;
+    case 'cfg': if (need(manager, 'רק המנהל יכול לשנות הגדרות')) need(applyCfg(s, c.key as keyof TCfg, c.val, 'המנהל'), 'ההגדרה לא שונתה'); break;
+    case 'start':
+      if (need(manager && s.handNo === 0, 'רק המנהל מתחיל את המשחק')) need(startHand(s, rng, now), s.cfg.buyIn ? 'צריך לפחות 2 שחקנים שנכנסו' : 'צריך לפחות 2 שחקנים');
+      break;
+    case 'pause':
+      if (need(manager, 'רק המנהל')) {
+        if (!s.paused) { s.paused = true; s.pausedAt = now; }
+        else { s.paused = false; const d = Math.max(0, now - (s.pausedAt ?? now)); if (s.startedAt) s.startedAt += d; s.deadline += d; if (s.phase === 'show') { s.nextAt += d; if (s.showAt) s.showAt += d; } delete s.pausedAt; }
+      }
+      break;
+    case 'learn': if (need(manager, 'רק המנהל')) s.cfg = { ...s.cfg, learn: !s.cfg.learn }; break;
+    case 'gift': if (need(manager, 'רק המנהל')) need(gift(s, c.id, Number(c.amount)), 'אי אפשר לתת ז׳יטונים כאן'); break;
+    case 'kick': {
+      const x = s.players.find(q => q.id === c.id);
+      if (need(manager && !!x && c.id !== from && s.phase !== 'hand', 'אפשר להוציא שחקן רק בין ידיים')) x!.out = !x!.out;
+      break;
+    }
+    case 'end': if (need(manager && s.phase !== 'hand', 'אפשר לסיים בין ידיים')) { s.phase = 'over'; s.turn = null; s.endReason = 'המנהל סיים את המשחק'; } break;
+    case 'tick': break;
+  }
+  tick(s, now, rng, live);
+  return { ok, error };
+}
+
+/** Time passes: connections, turn clocks, the next hand, and closing a table nobody is at. */
+export function tick(s: TS, now: number, rng: Rng, live = true) {
+  if (s.phase === 'over') return;
+  if (live) {
+    let last = 0;
+    for (const p of s.players) {
+      const away = !(p.seen && now - p.seen < AWAY_MS && p.vis !== false);
+      if (away && !p.away) p.awayAt = now;
+      p.away = away;
+      if (away && !p.sitOut && p.stack > 0 && !p.out && now - (p.awayAt ?? now) > SIT_OUT_MS) p.sitOut = 'away';
+      if (!away && p.sitOut === 'away') sitIn(s, p.id);
+      last = Math.max(last, p.seen ?? 0);
+    }
+    if (s.handNo > 0 && now - last > IDLE_END_MS) { s.phase = 'over'; s.turn = null; s.endReason = 'המשחק נסגר אוטומטית: אף שחקן לא היה מחובר 10 דקות'; return; }
+  }
+  if (s.paused) return;
+  if (s.phase === 'hand' && s.turn && now > s.deadline) {
+    const who = s.turn;
+    if (live) noteTimeout(s, who);
+    act(s, who, timeoutAction(s), now);
+  } else if (s.phase === 'show' && now > s.nextAt) {
+    endHand(s);
+    if ((s.phase as string) !== 'over' && activeCount(s) >= 2) startHand(s, rng, now);
+  } else if (s.phase === 'lobby' && s.handNo > 0 && activeCount(s) >= 2) startHand(s, rng, now);
+}

@@ -19,6 +19,8 @@ export interface TP {
   paid?: boolean; bust?: number;
   /** sitting out: 'idle' after two timed-out turns (returns with a tap), 'away' while disconnected (returns on reconnect) */
   sitOut?: 'idle' | 'away'; missed?: number;
+  /** online tables: last command time, screen on, and when the player went away */
+  seen?: number; vis?: boolean; awayAt?: number;
 }
 export type Phase = 'lobby' | 'hand' | 'show' | 'over';
 export interface Win { id: string; amount: number; name: string }
