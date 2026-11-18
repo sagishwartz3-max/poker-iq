@@ -2,8 +2,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
 import { GLOSSARY, GROUP_NAMES, type Term } from '../engine/glossary';
 import { Rich } from '../ui/Rich';
+import { useApp } from '../ui/ctx';
+import { KLEVELS } from '../game/path';
+import { ALL_TIPS, TIPS } from '../game/tips';
 
 export function Learn() {
+  const { P, go } = useApp();
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const entries = Object.entries(GLOSSARY).filter(([, t]) => !q || t.he.includes(q) || t.en.toLowerCase().includes(q.toLowerCase()) || t.def.includes(q));
@@ -19,6 +23,15 @@ export function Learn() {
           <Rich text="בכל יד המאמן משחק את המשך היד אלפי פעמים בראש, ובודק כמה פעמים היד שלך מנצחת ({{equity}}). אחר כך הוא משווה את זה למחיר שתשלם ({{potodds}}) ולעמדה שלך ({{position}}). אם אתה מנצח מספיק כדי שזה ישתלם, הוא ממליץ להמשיך. אם אתה מנצח הרבה, הוא ממליץ להעלות." />
         </p>
       </motion.div>
+      <div className="sec-title"><h2 className="h-md">ספריית השיעורים</h2><span className="muted num">{ALL_TIPS.filter(t => P.tips?.[t.id]).length}/{ALL_TIPS.length}</span></div>
+      <div className="lib-grid">
+        {KLEVELS.map((K, k) => {
+          const done = TIPS[k].filter(t => P.tips?.[t.id]).length;
+          return <button key={k} className={`glass lib-item ${done === TIPS[k].length ? 'done' : ''}`} onClick={() => go('lesson', { mode: 'free', level: k, back: 'learn' })}>
+            <span className="lib-n">{k + 1}</span><b>{K.name}</b><small className="num">{done}/{TIPS[k].length} טיפים</small>
+          </button>;
+        })}
+      </div>
       <input className="input gl-search" placeholder="חיפוש: לימפ, פלופ, אאוטים…" value={q} onChange={e => setQ(e.target.value)} aria-label="חיפוש מושג" />
       {groups.map(g => {
         const list = entries.filter(([, t]) => t.group === g);

@@ -18,6 +18,8 @@ export interface Progress {
   diag?: Diag;
   /** knowledge levels whose checkpoint was passed */
   passed?: Record<number, 1>;
+  /** lesson tips answered (from game/tips) */
+  tips?: Record<string, 1>;
 }
 /** A missed spot scheduled for spaced repetition. box 0..3: next review after 0, 1, 3, 7 days. */
 export interface Mistake { s: Scenario; box: number; due: number }

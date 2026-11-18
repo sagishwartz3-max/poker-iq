@@ -675,3 +675,24 @@ h1, h2, h3 { margin: 0; font-weight: 800; letter-spacing: -0.01em; text-wrap: ba
 .pl-skill i { height: 6px; border-radius: 6px; background: rgba(255,255,255,.1); overflow: hidden; display: block; }
 .pl-skill i b { display: block; height: 100%; background: var(--good); border-radius: 6px; }
 .pl-skill em { font-style: normal; color: var(--text-2); text-align: end; font-size: 12px; }
+
+/* ---------- lessons ---------- */
+.lesson-title { margin: 14px 0 10px; }
+.lesson-card { padding: 16px; border-radius: 20px; font-size: 15.5px; line-height: 1.7; margin-bottom: 12px; }
+.lesson-ex { margin-bottom: 12px; }
+.lesson-q { padding: 16px; border-radius: 20px; margin-top: 12px; }
+.lesson-q > b { display: block; margin-bottom: 10px; line-height: 1.5; }
+.lesson-opts { display: flex; flex-direction: column; gap: 8px; }
+.lesson-opt { text-align: start; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); color: inherit; font: inherit; font-size: 15px; cursor: pointer; transition: background .2s, border-color .2s, opacity .2s; }
+.lesson-opt.ok { border-color: var(--good); background: rgba(62,232,166,.14); }
+.lesson-opt.no { border-color: var(--bad); background: rgba(255,93,110,.14); }
+.lesson-opt.off { opacity: .5; }
+.lesson-why { margin: 12px 0 0; line-height: 1.6; }
+.lesson-why.ok { color: #9ff0cc; } .lesson-why.no { color: #ffb3bb; }
+.pl-tips { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.pl-tips span { color: var(--text-2); } .pl-tips span.done { color: var(--good); }
+.lib-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 18px; }
+.lib-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px; border-radius: 16px; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.lib-item b { font-size: 14.5px; } .lib-item small { color: var(--text-2); font-size: 12px; }
+.lib-n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; background: rgba(246,199,90,.15); color: var(--gold-2); margin-bottom: 4px; }
+.lib-item.done { border-color: rgba(62,232,166,.45); }

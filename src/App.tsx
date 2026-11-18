@@ -10,6 +10,7 @@ import { Board } from './screens/Board';
 import { Daily } from './screens/Daily';
 import { Diagnose } from './screens/Diagnose';
 import { Path } from './screens/Path';
+import { Lesson } from './screens/Lesson';
 import { Duel } from './screens/Duel';
 import { Friends } from './screens/Friends';
 import { Home } from './screens/Home';
@@ -62,7 +63,7 @@ export default function App() {
   const go = useCallback((s: Screen, args?: PlayArgs) => { if (args) { setPlay(args); setPlayKey(k => k + 1); } setScreen(s); }, []);
   const ctx: AppCtx = useMemo(() => ({ P, update, term: setTerm, toast, go, sync }), [P, update, toast, go, sync]);
 
-  const showTabs = P.onboarded && screen !== 'play' && screen !== 'daily' && screen !== 'pro' && screen !== 'table' && screen !== 'diagnose' && !duelLive;
+  const showTabs = P.onboarded && screen !== 'play' && screen !== 'daily' && screen !== 'pro' && screen !== 'table' && screen !== 'diagnose' && screen !== 'lesson' && !duelLive;
   const t = term ? GLOSSARY[term] : null;
 
   return (
@@ -70,7 +71,7 @@ export default function App() {
       <Background />
       <div className={`shell ${screen === 'table' ? 'table-shell' : ''}`}>
         <AnimatePresence mode="popLayout" initial={false}>
-          <motion.div key={P.onboarded ? screen + (screen === 'play' ? playKey : '') : 'onb'} style={{ position: 'absolute', inset: 0 }}
+          <motion.div key={P.onboarded ? screen + (screen === 'play' || screen === 'lesson' ? playKey : '') : 'onb'} style={{ position: 'absolute', inset: 0 }}
             initial={{ opacity: 0, y: 18, scale: 0.985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10, scale: 0.99 }} transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}>
             {!P.onboarded ? <Onboarding />
               : screen === 'home' ? <Home />
@@ -83,6 +84,7 @@ export default function App() {
               : screen === 'pro' ? <Pro />
               : screen === 'diagnose' ? <Diagnose />
               : screen === 'path' ? <Path />
+              : screen === 'lesson' ? <Lesson args={play} />
               : <Profile />}
           </motion.div>
         </AnimatePresence>

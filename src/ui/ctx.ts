@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { Progress } from '../game/progress';
 
-export type Screen = 'home' | 'duel' | 'board' | 'learn' | 'profile' | 'play' | 'daily' | 'pro' | 'table' | 'diagnose' | 'path';
+export type Screen = 'home' | 'duel' | 'board' | 'learn' | 'profile' | 'play' | 'daily' | 'pro' | 'table' | 'diagnose' | 'path' | 'lesson';
 export interface PlayArgs { mode: 'stage' | 'free' | 'daily' | 'review' | 'drill'; w?: number; l?: number; drill?: string;
   /** a knowledge-level checkpoint (drill mode): 8 of 10 good decisions passes the level */ level?: number;
   /** where to return when the round ends */ back?: Screen }

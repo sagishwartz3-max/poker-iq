@@ -4,6 +4,7 @@ import { currentLevel, iqScore, KLEVELS, knownFromDiag, nextSteps, POTENTIAL, sk
 import { useApp } from '../ui/ctx';
 import { I } from '../ui/Icons';
 import { Rich } from '../ui/Rich';
+import { TIPS } from '../game/tips';
 
 /** The personal path: knowledge level, Poker IQ, today's steps and the ladder up to master. */
 export function Path() {
@@ -16,9 +17,10 @@ export function Path() {
     if (s.kind === 'stage') go('play', { mode: 'stage', w: s.w, l: s.l, back: 'path' });
     else if (s.kind === 'drill') go('play', { mode: 'drill', drill: s.key, back: 'path' });
     else if (s.kind === 'check') go('play', { mode: 'drill', drill: KLEVELS[s.level].test, level: s.level, back: 'path' });
+    else if (s.kind === 'lesson') go('lesson', { mode: 'free', level: s.level, back: 'path' });
     else go('play', { mode: 'review', back: 'path' });
   };
-  const icon = (s: Step) => (s.kind === 'stage' ? '📘' : s.kind === 'drill' ? '🎯' : s.kind === 'check' ? '🏁' : '🔁');
+  const icon = (s: Step) => (s.kind === 'lesson' ? '💡' : s.kind === 'stage' ? '📘' : s.kind === 'drill' ? '🎯' : s.kind === 'check' ? '🏁' : '🔁');
   return (
     <div className="screen">
       <div className="play-top" style={{ marginBottom: 10 }}>
@@ -62,6 +64,10 @@ export function Path() {
               {open === k && (
                 <motion.div className="pl-body" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
                   <ul className="lesson-list">{K.lesson.map((t, j) => <li key={j}><Rich text={t} /></li>)}</ul>
+                  <div className="pl-tips">
+                    {TIPS[k].map(t => <span key={t.id} className={P.tips?.[t.id] ? 'done' : ''}>{P.tips?.[t.id] ? '✓' : '💡'} {t.title}</span>)}
+                  </div>
+                  <button className="btn wide" onClick={() => go('lesson', { mode: 'free', level: k, back: 'path' })}>שיעורי הרמה ({TIPS[k].filter(t => P.tips?.[t.id]).length}/{TIPS[k].length})</button>
                   {k < 8 && <div className="pl-skills">
                     {sk.map(x => <div key={x.key} className="pl-skill"><span>{x.name}</span>
                       <i><b style={{ width: `${x.acc == null ? 0 : Math.round(x.acc * 100)}%` }} /></i>

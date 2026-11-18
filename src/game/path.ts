@@ -1,6 +1,7 @@
 import { dueMistakes, nodeId, SKILLS, type Progress } from './progress';
 import { grade, makeScenario, type Scenario } from '../engine/scenarios';
 import { drillCfg, WORLDS } from './worlds';
+import { TIPS, tipsDone } from './tips';
 
 /**
  * The personal learning path: nine knowledge levels from "first hand" to "master".
@@ -88,6 +89,7 @@ export function estimate(d: Diag) {
 }
 
 export type Step =
+  | { kind: 'lesson'; level: number; title: string; why: string }
   | { kind: 'stage'; w: number; l: number; title: string; why: string }
   | { kind: 'drill'; key: string; title: string; why: string }
   | { kind: 'check'; level: number; title: string; why: string }
@@ -105,6 +107,8 @@ export function nextSteps(p: Progress): Step[] {
   }
   const K = KLEVELS[L], steps: Step[] = [];
   const known = knownFromDiag(p, L);
+  const nT = TIPS[L].length, dT = tipsDone(p.tips, L);
+  if (dT < nT) steps.push({ kind: 'lesson', level: L, title: `שיעורים: ${K.name} (${dT}/${nT})`, why: known ? 'גם אם אתה כבר יודע: הטיפים שמפרידים בין טוב למצוין' : 'הרעיונות החשובים ברמה הזאת, עם שאלה קצרה אחרי כל אחד' });
   if (!known && K.w >= 0) {
     const l = [0, 1, 2].find(x => !(p.stars[nodeId(K.w, x)] > 0));
     if (l !== undefined) steps.push({ kind: 'stage', w: K.w, l, title: `שיעור: ${WORLDS[K.w].name} · שלב ${l + 1}`,
@@ -117,7 +121,7 @@ export function nextSteps(p: Progress): Step[] {
   const ordered = known ? [steps.find(s => s.kind === 'check')!, ...steps.filter(s => s.kind !== 'check')] : steps;
   // the level test always stays on the list; a review of old mistakes comes after it
   if (due >= 3) ordered.push({ kind: 'review', title: `חזרה על ${due} טעויות`, why: 'ידיים שטעית בהן חוזרות עד שהן נכנסות לראש' });
-  return ordered.slice(0, 4);
+  return ordered.slice(0, 5);
 }
 
 function weakest(p: Progress, L: number) {
