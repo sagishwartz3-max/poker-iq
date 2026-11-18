@@ -8,6 +8,8 @@ import { phCapture } from './net/posthog';
 import { native } from './native';
 import { Board } from './screens/Board';
 import { Daily } from './screens/Daily';
+import { Diagnose } from './screens/Diagnose';
+import { Path } from './screens/Path';
 import { Duel } from './screens/Duel';
 import { Friends } from './screens/Friends';
 import { Home } from './screens/Home';
@@ -60,7 +62,7 @@ export default function App() {
   const go = useCallback((s: Screen, args?: PlayArgs) => { if (args) { setPlay(args); setPlayKey(k => k + 1); } setScreen(s); }, []);
   const ctx: AppCtx = useMemo(() => ({ P, update, term: setTerm, toast, go, sync }), [P, update, toast, go, sync]);
 
-  const showTabs = P.onboarded && screen !== 'play' && screen !== 'daily' && screen !== 'pro' && screen !== 'table' && !duelLive;
+  const showTabs = P.onboarded && screen !== 'play' && screen !== 'daily' && screen !== 'pro' && screen !== 'table' && screen !== 'diagnose' && !duelLive;
   const t = term ? GLOSSARY[term] : null;
 
   return (
@@ -79,6 +81,8 @@ export default function App() {
               : screen === 'board' ? <Board />
               : screen === 'learn' ? <Learn />
               : screen === 'pro' ? <Pro />
+              : screen === 'diagnose' ? <Diagnose />
+              : screen === 'path' ? <Path />
               : <Profile />}
           </motion.div>
         </AnimatePresence>

@@ -1,4 +1,5 @@
 import type { Scenario } from '../engine/scenarios';
+import type { Diag } from './path';
 
 export interface Progress {
   id: string; secret: string; nick: string; xp: number; stars: Record<string, number>; lessons: Record<number, 1>;
@@ -13,6 +14,10 @@ export interface Progress {
   tableDay: { date: string; xp: number };
   /** the day the daily wheel was last spun */
   wheel?: string;
+  /** answers and hands of the opening diagnostic */
+  diag?: Diag;
+  /** knowledge levels whose checkpoint was passed */
+  passed?: Record<number, 1>;
 }
 /** A missed spot scheduled for spaced repetition. box 0..3: next review after 0, 1, 3, 7 days. */
 export interface Mistake { s: Scenario; box: number; due: number }
@@ -78,7 +83,7 @@ export const SKILLS: Record<string, string> = {
   'k:open': 'פתיחת ידיים (כולם ויתרו)', 'k:vsOpen': 'מול העלאה לפני הפלופ', 'k:bbLimp': 'ביג בליינד מול לימפים', 'k:vs3bet': 'מול 3-בט',
   'k:cbet': 'הימור המשך (סי-בט)', 'k:leadOOP': 'פעולה ראשונה בלי מיקום', 'k:facingBet': 'מול הימור אחרי הפלופ', 'k:checkRaised': 'מול צ׳ק-רייז',
   's:0': 'לפני הפלופ', 's:3': 'פלופ', 's:4': 'טרן', 's:5': 'ריבר',
-  'p:ip': 'עם מיקום', 'p:oop': 'בלי מיקום', 'n:multi': 'שולחן מרובה שחקנים (3+)', 'd:draw': 'ידיים עם דרואו'
+  'p:ip': 'עם מיקום', 'p:oop': 'בלי מיקום', 'n:multi': 'שולחן מרובה שחקנים (3+)', 'd:draw': 'ידיים עם דרואו', 'a:all': 'הכול ביחד'
 };
 export function recordSkill(p: Progress, s: Scenario, pts: number) {
   const keys = [`k:${s.kind}`, `s:${s.street}`];

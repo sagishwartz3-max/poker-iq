@@ -64,7 +64,7 @@ export function Board() {
       </LayoutGroup>
       <Rows rows={rows} err={err} meId={P.id}
         val={r => (tab === 'xp' ? r.xp : tab === 'daily' ? r.daily_score : r.wins)}
-        sub={r => (tab === 'xp' ? `רמה ${levelOf(r.xp) + 1} · ${LEVEL_NAMES[levelOf(r.xp)]} · ${r.hands ? Math.round((r.correct / r.hands) * 100) : 0}% דיוק` : tab === 'daily' ? r.daily_squares : `${r.wins} ניצחונות · ${r.losses} הפסדים`)}
+        sub={r => (tab === 'xp' ? `דרגה ${levelOf(r.xp) + 1} · ${LEVEL_NAMES[levelOf(r.xp)]} · ${r.hands ? Math.round((r.correct / r.hands) * 100) : 0}% דיוק` : tab === 'daily' ? r.daily_squares : `${r.wins} ניצחונות · ${r.losses} הפסדים`)}
         empty={tab === 'daily' ? 'עוד אף אחד לא שיחק את האתגר היום.' : tab === 'wins' ? 'עוד אין ניצחונות בראש בראש. אתגר חבר!' : 'עוד אין שחקנים. סיים שלב ותופיע כאן.'} />
     </div>
   );

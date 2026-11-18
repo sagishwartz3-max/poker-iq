@@ -43,6 +43,7 @@ export function drillCfg(key: string): { cfg: GenCfg; keep?: (s: import('../engi
   if (t === 'k') return { cfg: { kinds: [v as GenCfg['kinds'][number]], opp: [1, 3], cands: 3 } };
   if (t === 's') return v === '0' ? { cfg: { kinds: PRE, opp: [1, 3], cands: 3 } } : { cfg: { kinds: POST, streets: [Number(v) as 3 | 4 | 5], opp: [1, 3], cands: 3 } };
   if (t === 'p') return { cfg: { kinds: POST, opp: [1, 2], cands: 3 }, keep: s => s.ip === (v === 'ip') };
+  if (t === 'a') return { cfg: { kinds: ALL_KINDS, opp: [1, 4], cands: 5 } };
   if (t === 'n') return { cfg: { kinds: ['facingBet', 'cbet', 'vsOpen', 'bbLimp'], opp: [3, 5], cands: 3 }, keep: s => s.n >= 3 };
   return { cfg: { kinds: ['facingBet'], streets: [3, 4], opp: [1, 2], draw: true, cands: 3 } };
 }

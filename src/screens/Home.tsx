@@ -4,6 +4,7 @@ import { LEVELS, LEVEL_NAMES, levelOf, WORLDS } from '../game/worlds';
 import { useApp } from '../ui/ctx';
 import { I } from '../ui/Icons';
 import { WheelCard } from '../ui/Wheel';
+import { currentLevel, iqScore, KLEVELS, nextSteps, POTENTIAL, TOP } from '../game/path';
 
 export function Header() {
   const { P, go } = useApp();
@@ -14,7 +15,7 @@ export function Header() {
       <button className="avatar" onClick={() => go('profile')} aria-label="פרופיל">{(P.nick || '?').slice(0, 1)}</button>
       <div className="top-info">
         <div className="top-name">{P.nick}</div>
-        <div className="top-lv">רמה {lv + 1} · {LEVEL_NAMES[lv]} · <span className="num">{P.xp.toLocaleString('he-IL')} XP</span></div>
+        <div className="top-lv">דרגה {lv + 1} · {LEVEL_NAMES[lv]} · <span className="num">{P.xp.toLocaleString('he-IL')} XP</span></div>
         <div className="xpbar"><motion.i initial={{ width: 0 }} animate={{ width: `${pctv}%` }} transition={{ duration: 1, ease: 'easeOut' }} /></div>
       </div>
       <div className="glass streak coins-pill" title="המטבעות שלך: נצברים עם כל נקודת XP ובשולחן החברים"><span aria-hidden="true">🪙</span><span className="num">{(P.coins ?? 0).toLocaleString('he-IL')}</span></div>
@@ -32,6 +33,24 @@ export function Home() {
   return (
     <div className="screen">
       <Header />
+      {P.diag ? (() => {
+        const L = currentLevel(P), st = nextSteps(P)[0];
+        return (
+          <motion.button className="glass path-card" onClick={() => go('path')} whileTap={{ scale: 0.98 }} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="pc-top">
+              <div><span className="eyebrow">המסלול שלי</span><b>{L >= TOP ? 'מאסטר 🏆' : `רמת ידע ${L + 1}/${TOP} · ${KLEVELS[L].name}`}</b></div>
+              <div className="pc-iq"><b className="num">{iqScore(P)}</b><small>Poker IQ · יעד {POTENTIAL}</small></div>
+            </div>
+            <div className="path-bar">{KLEVELS.map((_, k) => <i key={k} className={P.passed?.[k] ? 'done' : k === L ? 'now' : ''} />)}</div>
+            {st && <div className="pc-next"><span>הצעד הבא:</span> <b>{st.title}</b></div>}
+          </motion.button>
+        );
+      })() : (
+        <motion.button className="glass path-card new" onClick={() => go('diagnose')} whileTap={{ scale: 0.98 }} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+          <div className="pc-top"><div><span className="eyebrow">חדש · 2 דקות</span><b>🧠 בנה לי מסלול אישי</b></div></div>
+          <span className="muted" style={{ fontSize: 13.5 }}>אבחון קצר, ציון Poker IQ, כמה הטעויות עולות לך, ושיעורים מותאמים עד הרמה הכי גבוהה.</span>
+        </motion.button>
+      )}
       <div className="hero-cta">
         <motion.button className="glass cta daily" onClick={() => go('daily')} whileTap={{ scale: 0.97 }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <div className="mini-cards" aria-hidden>

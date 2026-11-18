@@ -6,6 +6,7 @@ import { dueMistakes, gain, nodeId, promoteMistake, recordSkill, rememberMistake
 import { sfx } from '../game/sound';
 import { track } from '../net/supabase';
 import { maybeAskReview } from '../native';
+import { checkpointHands, KLEVELS, TOP } from '../game/path';
 import { DAILY_CFG, drillCfg, HANDS_PER_ROUND, LEVEL_NAMES, levelOf, stageCfg, WORLDS } from '../game/worlds';
 import { Burst } from '../ui/Burst';
 import { useApp, type PlayArgs } from '../ui/ctx';
@@ -21,7 +22,7 @@ export function Play({ args }: { args: PlayArgs }) {
   const { cfg, title, sub, timer, seed, keep } = useMemo((): { cfg: GenCfg; title: string; sub: string; timer: number; seed: number; keep?: (s: Scenario) => boolean } => {
     if (args.mode === 'drill') {
       const d = drillCfg(args.drill!);
-      return { cfg: d.cfg, keep: d.keep, title: 'אימון ממוקד', sub: SKILLS[args.drill!] || '', timer: 0, seed: (Math.random() * 2 ** 32) >>> 0 };
+      return { cfg: d.cfg, keep: d.keep, title: args.level != null ? `מבחן רמה: ${KLEVELS[args.level].name}` : 'אימון ממוקד', sub: args.level != null ? 'צריך 8 החלטות טובות מתוך 10' : SKILLS[args.drill!] || '', timer: 0, seed: (Math.random() * 2 ** 32) >>> 0 };
     }
     if (args.mode === 'stage') {
       const W = WORLDS[args.w!];
@@ -46,17 +47,19 @@ export function Play({ args }: { args: PlayArgs }) {
   const t0 = useRef(0);
   const endless = args.mode === 'free';
   const short = args.mode === 'review' || args.mode === 'drill';
-  const queue = useRef<Scenario[]>(args.mode === 'review' ? dueMistakes(P).map(m => m.s).sort(() => Math.random() - 0.5).slice(0, HANDS_PER_ROUND) : []);
+  const checkpoint = args.mode === 'drill' && args.level != null;
+  const queue = useRef<Scenario[]>(args.mode === 'review' ? dueMistakes(P).map(m => m.s).sort(() => Math.random() - 0.5).slice(0, HANDS_PER_ROUND)
+    : checkpoint ? checkpointHands(args.drill!, mulberry32(seed)) : []);
   const total = args.mode === 'review' ? queue.current.length : HANDS_PER_ROUND;
   const [streak, setStreak] = useState(0);
 
   const deal = useCallback(() => {
-    let sc = args.mode === 'review' ? queue.current[i] : makeScenario(cfg, rng.current);
-    if (keep) for (let t = 0; t < 30 && sc && !keep(sc); t++) sc = makeScenario(cfg, rng.current);
+    let sc = args.mode === 'review' || checkpoint ? queue.current[i] : makeScenario(cfg, rng.current);
+    if (keep && !checkpoint) for (let t = 0; t < 30 && sc && !keep(sc); t++) sc = makeScenario(cfg, rng.current);
     if (!sc) return;
     setS(sc); setLast(null); t0.current = performance.now();
     sc.board.forEach((_, k) => sfx.deal(k));
-  }, [cfg, i, args.mode, keep]);
+  }, [cfg, i, args.mode, keep, checkpoint]);
 
   const dailyUsed = useRef(args.mode === 'daily' && P.daily?.date === today());
   useEffect(() => { if (dailyUsed.current) go('daily'); }, [go]);
@@ -115,10 +118,19 @@ export function Play({ args }: { args: PlayArgs }) {
     if (args.mode === 'review' || args.mode === 'drill') {
       const good = res.filter(x => x !== 'b').length;
       const xp = good * (args.mode === 'review' ? 20 : 15);
+      // a knowledge-level checkpoint: 8 good decisions of 10 opens the next level
+      if (args.level != null) {
+        const L = args.level, ok = good >= 8;
+        update(p => { gain(p, xp + (ok ? 100 : 0)); if (ok) { p.passed = { ...(p.passed || {}), [L]: 1 }; } }); sync();
+        track(P, 'level_check', { level: L, good, passed: ok });
+        if (ok) { sfx.level(); toast(L + 1 >= TOP ? `🏆 עברת את רמת המאסטר! +${xp + 100} XP` : `🎉 עלית לרמת ידע ${L + 2}: ${KLEVELS[L + 1].name} · +${xp + 100} XP`); maybeAskReview(P.hands); }
+        else toast(`${good} מתוך 10. צריך 8 כדי לעבור: עוד תרגול ממוקד ונסה שוב`);
+        go('path'); return;
+      }
       update(p => { gain(p, xp); }); sync();
       toast(args.mode === 'review' ? (good ? `תיקנת ${good} טעויות · +${xp} XP. הן יחזרו בעוד כמה ימים לבדיקה` : 'נסה שוב, ההסבר יעזור')
         : `${good}/${total} נכונות · +${xp} XP`);
-      go(args.mode === 'drill' ? 'profile' : 'home'); return;
+      go(args.back ?? (args.mode === 'drill' ? 'profile' : 'home')); return;
     }
     const frac = sum / (HANDS_PER_ROUND * 100);
     const stars = frac >= 0.9 ? 3 : frac >= 0.75 ? 2 : frac >= 0.6 ? 1 : 0;
@@ -141,7 +153,7 @@ export function Play({ args }: { args: PlayArgs }) {
   const quit = () => {
     if (args.mode === 'daily' && res.length) { finish(); return; } // the attempt is used: bank what was played
     if (endless && points) toast(`+${res.reduce((t, g) => t + Math.round((g === 'g' ? 100 : g === 'c' ? 70 : 0) * 0.3), 0)} XP מאימון חופשי`);
-    go(args.mode === 'daily' ? 'daily' : 'home');
+    go(args.mode === 'daily' ? 'daily' : args.back ?? 'home');
   };
 
   const W = args.mode === 'stage' ? WORLDS[args.w!] : null;
@@ -196,7 +208,7 @@ export function Play({ args }: { args: PlayArgs }) {
               {!result.stars && <p className="muted" style={{ margin: 0 }}>צריך לפחות 600 נקודות כדי לפתוח את השלב הבא.</p>}
               {result.lvUp != null && (
                 <motion.div className="chip gold big" style={{ margin: '8px auto 0' }} initial={{ scale: 0 }} animate={{ scale: [0, 1.2, 1] }} transition={{ delay: 1.1 }}>
-                  עלית לרמה {result.lvUp + 1}: {LEVEL_NAMES[result.lvUp]}
+                  עלית לדרגה {result.lvUp + 1}: {LEVEL_NAMES[result.lvUp]}
                 </motion.div>
               )}
               <div className="res-grid">
@@ -205,9 +217,10 @@ export function Play({ args }: { args: PlayArgs }) {
                 <div className="stat"><span>XP</span><b className="num gold-text">+{result.xp}</b></div>
               </div>
               <div className="modal-actions">
-                {result.stars > 0 && nextStage && <button className="btn gold wide" onClick={() => go('play', { mode: 'stage', ...nextStage })}>לשלב הבא</button>}
-                <button className="btn wide" onClick={() => go('play', { mode: 'stage', w: args.w, l: args.l })}>שוב את השלב</button>
-                <button className="btn wide" onClick={() => go('home')}>חזרה למסע</button>
+                {result.stars > 0 && nextStage && <button className="btn gold wide" onClick={() => go('play', { mode: 'stage', ...nextStage, back: args.back })}>לשלב הבא</button>}
+                <button className="btn wide" onClick={() => go('play', { mode: 'stage', w: args.w, l: args.l, back: args.back })}>שוב את השלב</button>
+                {args.back === 'path' ? <button className="btn wide" onClick={() => go('path')}>חזרה למסלול שלי</button>
+                  : <button className="btn wide" onClick={() => go('home')}>חזרה למסע</button>}
               </div>
             </motion.div>
           </>

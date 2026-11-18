@@ -21,7 +21,7 @@ export function Profile() {
       <div style={{ textAlign: 'center', marginBottom: 18 }}>
         <motion.div className="avatar" style={{ width: 86, height: 86, fontSize: 38, margin: '6px auto 10px' }} initial={{ scale: 0, rotate: -30 }} animate={{ scale: 1, rotate: 0 }}>{(P.nick || '?').slice(0, 1)}</motion.div>
         <h1 className="h-lg">{P.nick}</h1>
-        <div className="muted">רמה {lv + 1} · {LEVEL_NAMES[lv]}</div>
+        <div className="muted">דרגה {lv + 1} · {LEVEL_NAMES[lv]}</div>
       </div>
       <div className="pgrid">
         <div className="glass stat"><span>XP</span><b className="num">{P.xp.toLocaleString('he-IL')}</b></div>
