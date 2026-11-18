@@ -4,6 +4,7 @@ import { KLEVELS } from '../game/path';
 import { gain } from '../game/progress';
 import { sfx } from '../game/sound';
 import { TIPS } from '../game/tips';
+import { TIP_DRILLS, TIP_HANDS } from '../game/tipDrills';
 import { track } from '../net/supabase';
 import { useApp, type PlayArgs } from '../ui/ctx';
 import { I } from '../ui/Icons';
@@ -66,6 +67,8 @@ export function Lesson({ args }: { args: PlayArgs }) {
         </motion.div>
       </AnimatePresence>
       <div className="modal-actions" style={{ paddingBottom: 28 }}>
+        {picked != null && TIP_DRILLS[t.id] && <button className="btn wide" onClick={() => go('play', { mode: 'drill', drill: 'a:all', tip: t.id, tipLevel: L, back: 'lesson' })}>
+          🎯 תרגל את זה: {TIP_HANDS} ידיים{P.tipBest?.[t.id] != null ? ` (שיא: ${P.tipBest[t.id]}/${TIP_HANDS})` : ''}</button>}
         <button className="btn gold wide" disabled={picked == null} onClick={next}>{picked == null ? 'ענה כדי להמשיך' : i < tips.length - 1 ? 'לטיפ הבא' : 'סיום השיעור'}</button>
       </div>
     </div>

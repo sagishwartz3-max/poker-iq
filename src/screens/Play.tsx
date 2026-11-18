@@ -7,6 +7,8 @@ import { sfx } from '../game/sound';
 import { track } from '../net/supabase';
 import { maybeAskReview } from '../native';
 import { checkpointHands, KLEVELS, TOP } from '../game/path';
+import { TIP_DRILLS, TIP_HANDS } from '../game/tipDrills';
+import { ALL_TIPS } from '../game/tips';
 import { DAILY_CFG, drillCfg, HANDS_PER_ROUND, LEVEL_NAMES, levelOf, stageCfg, WORLDS } from '../game/worlds';
 import { Burst } from '../ui/Burst';
 import { useApp, type PlayArgs } from '../ui/ctx';
@@ -20,6 +22,10 @@ type Phase = 'lesson' | 'decide' | 'feedback' | 'done';
 export function Play({ args }: { args: PlayArgs }) {
   const { P, update, go, toast, sync } = useApp();
   const { cfg, title, sub, timer, seed, keep } = useMemo((): { cfg: GenCfg; title: string; sub: string; timer: number; seed: number; keep?: (s: Scenario) => boolean } => {
+    if (args.mode === 'drill' && args.tip && TIP_DRILLS[args.tip]) {
+      const d = TIP_DRILLS[args.tip], t = ALL_TIPS.find(x => x.id === args.tip)!;
+      return { cfg: d.cfg, keep: d.keep, title: `תרגול: ${t.title}`, sub: `${TIP_HANDS} ידיים על הרעיון הזה`, timer: 0, seed: (Math.random() * 2 ** 32) >>> 0 };
+    }
     if (args.mode === 'drill') {
       const d = drillCfg(args.drill!);
       return { cfg: d.cfg, keep: d.keep, title: args.level != null ? `מבחן רמה: ${KLEVELS[args.level].name}` : 'אימון ממוקד', sub: args.level != null ? 'צריך 8 החלטות טובות מתוך 10' : SKILLS[args.drill!] || '', timer: 0, seed: (Math.random() * 2 ** 32) >>> 0 };
@@ -50,12 +56,13 @@ export function Play({ args }: { args: PlayArgs }) {
   const checkpoint = args.mode === 'drill' && args.level != null;
   const queue = useRef<Scenario[]>(args.mode === 'review' ? dueMistakes(P).map(m => m.s).sort(() => Math.random() - 0.5).slice(0, HANDS_PER_ROUND)
     : checkpoint ? checkpointHands(args.drill!, mulberry32(seed)) : []);
-  const total = args.mode === 'review' ? queue.current.length : HANDS_PER_ROUND;
+  const tipT = args.tip ? ALL_TIPS.find(x => x.id === args.tip) : undefined;
+  const total = args.mode === 'review' ? queue.current.length : tipT ? TIP_HANDS : HANDS_PER_ROUND;
   const [streak, setStreak] = useState(0);
 
   const deal = useCallback(() => {
     let sc = args.mode === 'review' || checkpoint ? queue.current[i] : makeScenario(cfg, rng.current);
-    if (keep && !checkpoint) for (let t = 0; t < 30 && sc && !keep(sc); t++) sc = makeScenario(cfg, rng.current);
+    if (keep && !checkpoint) for (let t = 0; t < (tipT ? 200 : 30) && sc && !keep(sc); t++) sc = makeScenario(cfg, rng.current);
     if (!sc) return;
     setS(sc); setLast(null); t0.current = performance.now();
     sc.board.forEach((_, k) => sfx.deal(k));
@@ -127,6 +134,12 @@ export function Play({ args }: { args: PlayArgs }) {
         else toast(`${good} מתוך 10. צריך 8 כדי לעבור: עוד תרגול ממוקד ונסה שוב`);
         go('path'); return;
       }
+      if (tipT) {
+        update(p => { gain(p, xp); p.tipBest = { ...(p.tipBest || {}), [tipT.id]: Math.max(p.tipBest?.[tipT.id] ?? 0, good) }; }); sync();
+        track(P, 'tip_drill', { tip: tipT.id, good });
+        toast(`${good}/${total} נכונות · +${xp} XP${good >= 4 ? ' · הרעיון נכנס 💡' : ' · שווה לקרוא שוב את הטיפ'}`);
+        leaveTo(); return;
+      }
       update(p => { gain(p, xp); }); sync();
       toast(args.mode === 'review' ? (good ? `תיקנת ${good} טעויות · +${xp} XP. הן יחזרו בעוד כמה ימים לבדיקה` : 'נסה שוב, ההסבר יעזור')
         : `${good}/${total} נכונות · +${xp} XP`);
@@ -150,10 +163,12 @@ export function Play({ args }: { args: PlayArgs }) {
     setI(x => x + 1); setS(null); setPhase('decide');
   };
 
+  // back to where the round came from; a tip practice returns to its lesson
+  const leaveTo = () => (args.back === 'lesson' ? go('lesson', { mode: 'free', level: args.tipLevel ?? 0, back: 'path' }) : go(args.back ?? 'home'));
   const quit = () => {
     if (args.mode === 'daily' && res.length) { finish(); return; } // the attempt is used: bank what was played
     if (endless && points) toast(`+${res.reduce((t, g) => t + Math.round((g === 'g' ? 100 : g === 'c' ? 70 : 0) * 0.3), 0)} XP מאימון חופשי`);
-    go(args.mode === 'daily' ? 'daily' : args.back ?? 'home');
+    if (args.mode === 'daily') go('daily'); else leaveTo();
   };
 
   const W = args.mode === 'stage' ? WORLDS[args.w!] : null;
@@ -178,7 +193,8 @@ export function Play({ args }: { args: PlayArgs }) {
       <AnimatePresence>
         {phase === 'feedback' && s && last && (
           <Feedback key={'fb' + i} s={s} chosen={last.a} g={last.g} pts={last.pts} onNext={next}
-            nextLabel={!endless && i >= total - 1 ? (short ? 'סיום' : 'לתוצאות') : 'יד הבאה'} />
+            nextLabel={!endless && i >= total - 1 ? (short ? 'סיום' : 'לתוצאות') : 'יד הבאה'}
+            extra={tipT ? <div className="box rule" style={{ marginBottom: 10 }}><div className="box-t">💡 מהשיעור: {tipT.title}</div><Rich text={tipT.rule} /></div> : undefined} />
         )}
       </AnimatePresence>
 

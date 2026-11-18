@@ -18,3 +18,19 @@ for (const L of KLEVELS) for (let seed = 1; seed <= 40; seed++) {
   }
 }
 console.log('OK: no level checkpoint passes by repeating one action (best spam score', worst + '/10)');
+
+// Every tip drill finds its hands quickly (the filter must not starve the generator).
+import { makeScenario } from '../src/engine/scenarios';
+import { TIP_DRILLS } from '../src/game/tipDrills';
+import { ALL_TIPS } from '../src/game/tips';
+{
+  const rng = mulberry32(5), slow: string[] = [];
+  for (const [id, d] of Object.entries(TIP_DRILLS)) {
+    assert(ALL_TIPS.some(t => t.id === id), `drill for unknown tip ${id}`);
+    let hit = 0, tries = 0;
+    while (hit < 10 && tries < 600) { tries++; const s = makeScenario(d.cfg, rng); if (!d.keep || d.keep(s)) hit++; }
+    if (tries > 150) slow.push(`${id}:${tries}`);
+    assert.equal(hit, 10, `${id} found only ${hit} hands in 600 tries`);
+  }
+  console.log('OK: every tip drill finds hands', slow.length ? `(slower: ${slow.join(' ')})` : '');
+}
