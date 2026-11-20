@@ -8,6 +8,8 @@ export type TableCmd =
   | { t: 'join'; nick: string }
   | { t: 'act'; hand: number; a: TAction }
   | { t: 'rebuy' } | { t: 'pay' } | { t: 'unpay' } | { t: 'back' }
+  /** take a break: not dealt in from the next hand until 'back' */
+  | { t: 'sitout' }
   /** liveness: sent every few seconds while the screen is on, and with vis=false when it goes to the background */
   | { t: 'beat'; vis: boolean }
   | { t: 'suggest'; key: string; val: number | boolean }
@@ -29,7 +31,7 @@ export const CFG_OPTS: { key: keyof TCfg; label: string; opts: [number | boolean
 export const optText = (key: string, val: unknown) => CFG_OPTS.find(o => o.key === key)?.opts.find(([v]) => v === val)?.[1] ?? String(val);
 const validOpt = (key: string, val: unknown) => !!CFG_OPTS.find(o => o.key === key)?.opts.some(([v]) => v === val);
 
-export const AWAY_MS = 15000, SIT_OUT_MS = 20000, IDLE_END_MS = 10 * 60000;
+export const AWAY_MS = 15000, SIT_OUT_MS = 20000, IDLE_END_MS = 10 * 60000, MANAGER_MS = 60000;
 
 /** Waiting-room setting change (stacks and entries follow it). */
 export function applyCfg(s: TS, key: keyof TCfg, val: number | boolean, who: string) {
@@ -64,6 +66,7 @@ export function applyCmd(s: TS, from: string, c: TableCmd, now: number, rng: Rng
     case 'rebuy': need(rebuy(s, from), 'ריביי לא אפשרי'); break;
     case 'pay': case 'unpay': need(payIn(s, from, c.t === 'pay'), 'אי אפשר לשנות כניסה אחרי שהמשחק התחיל'); break;
     case 'back': sitIn(s, from); break;
+    case 'sitout': if (need(!!p && !p.out, 'אתה לא יושב בשולחן') && !p!.sitOut) p!.sitOut = 'idle'; break;
     case 'beat': if (c.vis && p?.sitOut === 'away') sitIn(s, from); break;
     case 'suggest':
       if (need(s.handNo === 0 && validOpt(c.key, c.val) && !!p, 'אפשר להציע רק לפני תחילת המשחק'))
@@ -107,6 +110,12 @@ export function tick(s: TS, now: number, rng: Rng, live = true) {
       last = Math.max(last, p.seen ?? 0);
     }
     if (s.handNo > 0 && now - last > IDLE_END_MS) { s.phase = 'over'; s.turn = null; s.endReason = 'המשחק נסגר אוטומטית: אף שחקן לא היה מחובר 10 דקות'; return; }
+    // the manager has been gone a minute: someone who is here takes over (settings, start, pause)
+    const mgr = s.players.find(p => p.id === s.hostId);
+    if (!mgr || (mgr.away && now - (mgr.awayAt ?? now) > MANAGER_MS)) {
+      const next = s.players.find(p => !p.away && !p.out && p.id !== s.hostId);
+      if (next) { s.hostId = next.id; s.note = { text: `${next.nick} מנהל עכשיו את השולחן (המנהל הקודם התנתק)`, at: now }; }
+    }
   }
   if (s.paused) return;
   if (s.phase === 'hand' && s.turn && now > s.deadline) {
@@ -114,6 +123,9 @@ export function tick(s: TS, now: number, rng: Rng, live = true) {
     if (live) noteTimeout(s, who);
     act(s, who, timeoutAction(s), now);
   } else if (s.phase === 'show' && now > s.nextAt) {
+    const nick = (id: string) => s.players.find(p => p.id === id)?.nick ?? '';
+    s.prev = { hand: s.handNo, board: [...s.board], winners: s.winners.map(w => ({ nick: nick(w.id), amount: w.amount, name: w.name })),
+      shown: Object.keys(s.shown).map(id => ({ nick: nick(id), cards: s.shown[id], name: s.hands?.[id]?.name ?? '' })) };
     endHand(s);
     if ((s.phase as string) !== 'over' && activeCount(s) >= 2) startHand(s, rng, now);
   } else if (s.phase === 'lobby' && s.handNo > 0 && activeCount(s) >= 2) startHand(s, rng, now);

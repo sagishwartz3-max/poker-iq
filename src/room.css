@@ -347,3 +347,15 @@
   padding: 14px 22px; border-radius: 20px; background: #0d1712f0; border: 1px solid #c8a96488; font-size: 22px; color: #f3dfa6; pointer-events: auto; text-align: center; }
 .reference-room .psitout .pbtn { min-height: 64px; font-size: 26px; padding: 0 28px; }
 .vertical .psitout { top: 1020px; font-size: 26px; }
+
+/* pre-actions while waiting: a chosen one glows */
+.reference-room .pre-actions .pbtn { opacity: .9; font-size: 26px; }
+.reference-room .pre-actions .pbtn.on { opacity: 1; background: linear-gradient(180deg,#2f6d45,#1d4a2e); border-color: #9dd77c; box-shadow: 0 0 0 2px #9dd77c inset, 0 0 18px #9dd77c55; color: #fff; }
+.vertical .pre-actions .pbtn { font-size: 30px; }
+/* last hand panel */
+.prev-board { display: flex; gap: 6px; direction: ltr; justify-content: center; margin: 6px 0 10px; }
+.prev-shown { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.prev-cards { display: inline-flex; gap: 3px; direction: ltr; }
+.prev-board .card3d, .prev-cards .card3d { position: relative; }
+.reference-room .prev-board .card3d .rk { font-size: 20px; } .reference-room .prev-board .card3d .su { font-size: 16px; } .reference-room .prev-board .card3d .big { font-size: 30px; }
+.reference-room .prev-cards .card3d .rk { font-size: 14px; } .reference-room .prev-cards .card3d .su { font-size: 12px; } .reference-room .prev-cards .card3d .big { font-size: 20px; }

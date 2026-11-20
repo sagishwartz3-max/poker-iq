@@ -37,6 +37,8 @@ export interface TS {
   suggest?: { id: string; nick: string; key: string; val: number | boolean; at: number }[]; note?: { text: string; at: number };
   /** why the game ended early, when it did */
   endReason?: string;
+  /** the last finished hand, for the 'last hand' panel */
+  prev?: { hand: number; board: number[]; winners: { nick: string; amount: number; name: string }[]; shown: { nick: string; cards: number[]; name: string }[] };
 }
 
 /** Seconds into the showdown when board card i lands, and when the result is revealed. Host and players share it. */

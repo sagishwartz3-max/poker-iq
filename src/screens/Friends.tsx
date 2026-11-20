@@ -67,6 +67,9 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const [bubbles, setBubbles] = useState<Record<string, { e: string; k: number }>>({});
   const [burst, setBurst] = useState(0);
   const [pendingAt, setPendingAt] = useState(-1);
+  // pre-actions: chosen while waiting, played the moment my turn comes (cleared when the bet changes)
+  const [pre, setPre] = useState<{ kind: 'cf' | 'call' | 'any'; bet: number; hand: number; street: number } | null>(null);
+  const [prevOpen, setPrevOpen] = useState(false);
   const live = useRef<TableLive | null>(null);
   const S = useRef<TS | null>(null); // the practice table's state (online tables live on the server)
   const lastAt = useRef(0);
@@ -131,7 +134,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
       const r = codeIn ? await tableCmd(P, codeIn.toUpperCase(), { t: 'join', nick: P.nick || 'שחקן' }) : await createTable(P, cfg);
       if (!r.ok || !r.view || !r.channel) { toast(r.error || 'החיבור לשולחן נכשל. נסה שוב.'); return; }
       const c = r.code || codeIn!.toUpperCase();
-      if (!codeIn) try { localStorage.setItem(MINE_KEY, c); } catch { /* storage off */ }
+      try { localStorage.setItem(MINE_KEY, c); } catch { /* storage off */ }
       live.current?.leave();
       S.current = null; lastAt.current = 0; codeRef.current = c;
       setPractice(false); setCode(c); setMine(null); setLog([]); setEarned(0); setFb(null);
@@ -207,7 +210,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     if (seen.current) for (const p of V.players) if (!seen.current.has(p.id) && p.id !== P.id) toast(V.handNo > 0 ? `${p.nick} הצטרף ויקבל קלפים ביד הבאה` : `${p.nick} הצטרף לשולחן`);
     seen.current = new Set(ids);
   }, [V?.players.length]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (V?.note && !isHost && Date.now() + skew - V.note.at < 8000) toast(V.note.text); }, [V?.note?.at]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (V?.note && (!isHost || !V.note.text.startsWith('המנהל:')) && Date.now() + skew - V.note.at < 8000) toast(V.note.text); }, [V?.note?.at]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setRaiseTo(null); if (myTurn) sfx.tick(); }, [myTurn, V?.street]);
   useEffect(() => { if (V?.last) sfx.chip(); }, [V?.last?.id, V?.last?.text, V?.pot]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (resolved && V!.winners.some(w => w.id === P.id)) { sfx.good(); setBurst(b => b + 1); } }, [resolved, V?.handNo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -235,6 +238,16 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     setPendingAt(V!.at);
     void send({ t: 'act', hand: V!.handNo, a }, true).then(ok => { if (!ok) setPendingAt(-1); });
   };
+  // play the chosen pre-action as soon as it is my turn
+  useEffect(() => {
+    if (!pre || !V) return;
+    if (pre.hand !== V.handNo || pre.street !== V.street || (pre.kind === 'call' && V.curBet !== pre.bet)) { setPre(null); return; }
+    if (!myTurn) return;
+    const a: TAction = pre.kind === 'cf' ? (toCall > 0 ? { type: 'fold' } : { type: 'check' }) : toCall > 0 ? { type: 'call' } : { type: 'check' };
+    setPre(null); doAct(a);
+  }, [myTurn, V?.handNo, V?.street, V?.curBet]); // eslint-disable-line react-hooks/exhaustive-deps
+  const canPre = !!V && V.phase === 'hand' && !myTurn && !!me?.inHand && !me.folded && !me.allIn && !!myCards && pendingAt !== V.at;
+  const togglePre = (kind: 'cf' | 'call' | 'any') => setPre(p => (p?.kind === kind ? null : V ? { kind, bet: V.curBet, hand: V.handNo, street: V.street } : null));
   const buyIn = V?.cfg.buyIn ?? 0;
   const doPay = (on: boolean) => {
     if (on && (P.coins ?? 0) < buyIn) { toast('אין לך מספיק מטבעות לדמי הכניסה'); return; }
@@ -264,7 +277,9 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   };
   const doRebuy = () => void send({ t: 'rebuy' });
   const emoji = (e: string) => { live.current?.emoji(P.id, e); setBubbles(b => ({ ...b, [P.id]: { e, k: Date.now() } })); };
-  const leave = () => { live.current?.leave(); live.current = null; S.current = null; codeRef.current = ''; lastAt.current = 0; setCode(''); setV(null); setMenu(false); setPractice(false); };
+  const leave = () => {
+    if (!practice && codeRef.current) { void tableCmd(P, codeRef.current, { t: 'beat', vis: false }); if (V?.phase === 'over') try { localStorage.removeItem(MINE_KEY); } catch { /* storage off */ } }
+    live.current?.leave(); live.current = null; S.current = null; codeRef.current = ''; lastAt.current = 0; setCode(''); setV(null); setMenu(false); setPractice(false); };
   const train = () => {
     const s = newTable('TRAIN', P.id, { ...cfg, buyIn: 0 });
     seat(s, P.id, P.nick || 'אני');
@@ -284,7 +299,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         <button className="icon-btn" onClick={() => go('duel')} aria-label="חזרה">{I.back}</button>
         <div className="play-title"><b>שולחן פוקר לחברים</b><span>טקסס הולדם, ז׳יטונים בלבד</span></div>
       </div>
-      {lastHost && <button className="glass list-btn" onClick={() => enter(lastHost)}><span>חזרה לשולחן שפתחתי ({lastHost})</span><span style={{ width: 20 }}>{I.back}</span></button>}
+      {lastHost && <button className="glass list-btn" onClick={() => enter(lastHost)}><span>חזרה לשולחן האחרון ({lastHost})</span><span style={{ width: 20 }}>{I.back}</span></button>}
       <motion.div className="glass" style={{ padding: 18, borderRadius: 24, marginBottom: 14 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         <h3 className="h-md" style={{ marginBottom: 12 }}>פתח שולחן (אתה המנהל)</h3>
         <Opt label="מצב משחק" value={gameMode} set={mode => { setGameMode(mode); setCfg(c => ({ ...c, levelMin: mode === 'טורבו' ? 5 : mode === 'טורניר' ? 10 : 0, rebuys: mode === 'טורניר' || c.buyIn ? 0 : 2, turnSec: mode === 'טורבו' ? 20 : 30 })); }} opts={[['רגיל', 'רגיל'], ['טורבו', 'טורבו'], ['טורניר', 'טורניר']]} />
@@ -558,13 +573,21 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           )
         ) : (
           <div className="pwait">
-            <div className="pactions waiting-actions"><button className="pbtn" disabled>Fold</button><button className="pbtn" disabled>Check</button><button className="pbtn go" disabled>Raise</button></div><span className="pstatus">{V.paused ? 'המנהל עצר את המשחק' : V.phase === 'show' ? 'היד הבאה מיד' : turnP ? `התור של ${turnP.nick}` : V.phase === 'lobby' && activeCount(V as unknown as TS) < 2 ? 'מחכים שעוד שחקן יחזור לשולחן…' : 'מחלקים קלפים'}</span>
+            {canPre
+              ? <div className="pactions pre-actions" role="group" aria-label="פעולה מראש">
+                  <button className={`pbtn ${pre?.kind === 'cf' ? 'on' : ''}`} aria-pressed={pre?.kind === 'cf'} onClick={() => togglePre('cf')}>{toCall > 0 ? 'Fold' : 'Check/Fold'}</button>
+                  <button className={`pbtn ${pre?.kind === 'call' ? 'on' : ''}`} aria-pressed={pre?.kind === 'call'} onClick={() => togglePre('call')}>{toCall > 0 ? <>Call<small className="num">{fmt(Math.min(toCall, me!.stack))}</small></> : 'Check'}</button>
+                  <button className={`pbtn ${pre?.kind === 'any' ? 'on' : ''}`} aria-pressed={pre?.kind === 'any'} onClick={() => togglePre('any')}>Call any</button>
+                </div>
+              : <div className="pactions waiting-actions"><button className="pbtn" disabled>Fold</button><button className="pbtn" disabled>Check</button><button className="pbtn go" disabled>Raise</button></div>}
+            <span className="pstatus">{V.phase === 'hand' && pendingAt === V.at ? 'שולח…' : pre ? 'הפעולה תתבצע כשיגיע התור שלך' : V.paused ? 'המנהל עצר את המשחק' : V.phase === 'show' ? 'היד הבאה מיד' : turnP ? `התור של ${turnP.nick}` : V.phase === 'lobby' && activeCount(V as unknown as TS) < 2 ? 'מחכים שעוד שחקן יחזור לשולחן…' : 'מחלקים קלפים'}</span>
           </div>
         )}
       </div>
 
       <div className="ptools">
               {<button className="pro-round" onClick={() => setMenu(true)} aria-label={isHost ? 'ניהול השולחן והגדרות' : 'הגדרות'}><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg></button>}
+              {V.prev && <button className="pro-round prev-btn" onClick={() => setPrevOpen(true)} aria-label="היד הקודמת"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /><path d="M12 8v4l3 2" /></svg></button>}
               <button className="pro-round" onClick={() => setTray(t => !t)} aria-label="תגובות"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg></button>
               {tray && <div className="ptray">{EMOJIS.map(e => <button key={e} onClick={() => { emoji(e); setTray(false); }} aria-label={`שלח ${e}`}>{e}</button>)}</div>}
             </div>
@@ -578,6 +601,9 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
               <div className="grab" />
               <button className="icon-btn" onClick={() => setMenu(false)} aria-label="סגור ניהול שולחן">{I.x}</button>
               <h3 className="h-md" style={{ marginBottom: 10 }}>הגדרות</h3>
+              {me && !me.out && !practice && <button className="glass row ptoggle" onClick={() => { void send({ t: me.sitOut ? 'back' : 'sitout' }); setMenu(false); }}>
+                <span className="who"><b>{me.sitOut ? 'חזרתי לשולחן' : 'הפסקה אישית'}</b><span>{me.sitOut ? 'תקבל קלפים מהיד הבאה' : 'לא תקבל קלפים מהיד הבאה, עד שתחזור'}</span></span>
+              </button>}
               {learn && <button className="glass row ptoggle" role="switch" aria-checked={!helpOff} onClick={toggleHelp}>
                 <span className="who"><b>המאמן</b><span>{helpOff ? 'כבוי' : 'פועל: בתור שלך שאלה ושיעור מהאפליקציה, ואחרי כל החלטה משוב'}</span></span>
                 <span className={`switch ${helpOff ? '' : 'on'}`} aria-hidden="true"><i /></span>
@@ -602,6 +628,23 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
             </motion.div>
           </>
         )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {prevOpen && V.prev && (<>
+          <motion.div className="scrim" onClick={() => setPrevOpen(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
+          <motion.div className="sheet psheet" role="dialog" aria-modal="true" aria-label="היד הקודמת" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 260, damping: 30 }}>
+            <div className="grab" />
+            <button className="icon-btn" onClick={() => setPrevOpen(false)} aria-label="סגור">{I.x}</button>
+            <h3 className="h-md" style={{ marginBottom: 8 }}>היד הקודמת · יד {V.prev.hand}</h3>
+            {V.prev.board.length > 0 && <div className="prev-board">{V.prev.board.map((c, i) => <MiniCard key={i} c={c} size={52} />)}</div>}
+            {V.prev.winners.map(w => <p key={w.nick} style={{ margin: '6px 0' }}><b className="gold-text">{w.nick}</b> זכה ב-<b className="num">{fmt(w.amount)}</b>{w.name ? ` עם ${w.name}` : ' (כולם עשו Fold)'}</p>)}
+            {V.prev.shown.length > 0 && <div className="prev-shown">
+              {V.prev.shown.map(x => <div key={x.nick} className="glass row" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
+                <span className="prev-cards">{x.cards.map((c, i) => <MiniCard key={i} c={c} size={34} />)}</span><b>{x.nick}</b><span className="muted" style={{ fontSize: 13 }}>{x.name}</span>
+              </div>)}
+            </div>}
+          </motion.div>
+        </>)}
       </AnimatePresence>
       <Burst fire={burst} colors={['#e9c46a', '#fff1c1', '#c9a227']} />
     </>)}</RoomStage>

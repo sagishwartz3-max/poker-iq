@@ -15,7 +15,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const URL_ = Deno.env.get('SUPABASE_URL')!, KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const db = createClient(URL_, KEY, { auth: { persistSession: false } });
 const rnd = () => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
-const CMDS = new Set(['join', 'act', 'rebuy', 'pay', 'unpay', 'back', 'beat', 'suggest', 'cfg', 'start', 'pause', 'learn', 'gift', 'kick', 'end', 'tick']);
+const CMDS = new Set(['join', 'act', 'rebuy', 'pay', 'unpay', 'back', 'beat', 'suggest', 'cfg', 'start', 'pause', 'learn', 'gift', 'kick', 'end', 'tick', 'sitout']);
 
 /** The settings a new table may use: anything else falls back to the defaults. */
 function cleanCfg(c: Partial<TCfg> | undefined): TCfg {

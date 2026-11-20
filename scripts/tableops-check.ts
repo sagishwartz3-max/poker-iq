@@ -70,3 +70,23 @@ const total = (s: TS) => s.players.reduce((t, p) => t + p.stack + p.bet * 0, 0) 
   console.log('OK: away, sitting out, back in, empty table closes');
 }
 void total;
+
+// Breaks, the last-hand panel, and the manager role moving on when the manager is gone
+{
+  let now = 4_000_000;
+  const s = newTable('T4', 'a', DEFAULT_CFG);
+  for (const id of ['a', 'b', 'c']) applyCmd(s, id, { t: 'join', nick: id.toUpperCase() }, now, rng);
+  applyCmd(s, 'a', { t: 'start' }, now, rng);
+  applyCmd(s, 'c', { t: 'sitout' }, now, rng);
+  assert.equal(s.players[2].sitOut, 'idle');
+  // play the hand out by folds
+  while (s.phase === 'hand') { now += 500; applyCmd(s, s.turn!, { t: 'act', hand: s.handNo, a: { type: 'fold' } }, now, rng); applyCmd(s, 'b', { t: 'beat', vis: true }, now, rng); applyCmd(s, 'c', { t: 'beat', vis: true }, now, rng); }
+  now = s.nextAt + 10; applyCmd(s, 'b', { t: 'beat', vis: true }, now, rng);
+  assert(s.prev && s.prev.hand === 1 && s.prev.winners.length === 1, 'last hand kept');
+  assert(!s.players[2].inHand, 'on a break: not dealt');
+  applyCmd(s, 'c', { t: 'back' }, now, rng); assert(!s.players[2].sitOut);
+  // manager silent for over a minute while b and c stay: the role moves to someone present
+  for (let k = 0; k < 25; k++) { now += 4000; applyCmd(s, 'b', { t: 'beat', vis: true }, now, rng); applyCmd(s, 'c', { t: 'beat', vis: true }, now, rng); }
+  assert.notEqual(s.hostId, 'a', 'manager handed over'); assert(s.note?.text.includes('מנהל'));
+  console.log('OK: personal break, last hand, manager handover');
+}
