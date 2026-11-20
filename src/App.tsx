@@ -33,11 +33,12 @@ const TABS: { s: Screen; t: string; icon: JSX.Element }[] = [
 
 const urlDuel = new URLSearchParams(location.search).get('duel')?.toUpperCase().slice(0, 5) || '';
 const urlTable = new URLSearchParams(location.search).get('table')?.toUpperCase().slice(0, 5) || '';
+const urlClub = new URLSearchParams(location.search).get('club')?.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || '';
 
 export default function App() {
   const [P, setP] = useState<Progress>(load);
   const pRef = useRef(P); pRef.current = P;
-  const [screen, setScreen] = useState<Screen>(urlTable ? 'table' : urlDuel ? 'duel' : 'home');
+  const [screen, setScreen] = useState<Screen>(urlTable || urlClub ? 'table' : urlDuel ? 'duel' : 'home');
   const [play, setPlay] = useState<PlayArgs>({ mode: 'free' });
   const [playKey, setPlayKey] = useState(0);
   const [term, setTerm] = useState<string | null>(null);
@@ -49,8 +50,8 @@ export default function App() {
   useEffect(() => { setSound(P.sound); }, [P.sound]);
   // which screens people reach: the funnel from first open to the first table (PostHog)
   useEffect(() => { if (native.screen) void native.screen(screen); else phCapture('screen_view', { screen }); }, [screen]);
-  useEffect(() => { if (urlDuel || urlTable) history.replaceState(null, '', location.pathname); }, []);
-  useEffect(() => { if (P.onboarded) track(P, 'app_open', { via: urlTable ? 'table_link' : urlDuel ? 'duel_link' : 'direct', hands: P.hands, xp: P.xp }); }, [P.onboarded]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (urlDuel || urlTable || urlClub) history.replaceState(null, '', location.pathname); }, []);
+  useEffect(() => { if (P.onboarded) track(P, 'app_open', { via: urlClub ? 'club_link' : urlTable ? 'table_link' : urlDuel ? 'duel_link' : 'direct', hands: P.hands, xp: P.xp }); }, [P.onboarded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = useCallback((fn: (p: Progress) => void) => {
     setP(prev => { const next: Progress = JSON.parse(JSON.stringify(prev)); fn(next); persist(next); return next; });
@@ -78,7 +79,7 @@ export default function App() {
               : screen === 'play' ? <Play args={play} />
               : screen === 'daily' ? <Daily />
               : screen === 'duel' ? <Duel initialCode={urlDuel} onPlaying={setDuelLive} />
-              : screen === 'table' ? <Friends initialCode={urlTable} onPlaying={setDuelLive} />
+              : screen === 'table' ? <Friends initialCode={urlTable} initialClub={urlClub} onPlaying={setDuelLive} />
               : screen === 'board' ? <Board />
               : screen === 'learn' ? <Learn />
               : screen === 'pro' ? <Pro />

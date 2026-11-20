@@ -6,7 +6,7 @@ import type { TableCmd } from '../engine/tableops';
 import type { Progress } from '../game/progress';
 import { supabase } from './supabase';
 
-export interface TableReply { ok?: boolean; error?: string; code?: string; channel?: string; view?: View; mine?: { hand: number; cards: number[] } | null }
+export interface TableReply { ok?: boolean; error?: string; code?: string; channel?: string; club?: string | null; view?: View; mine?: { hand: number; cards: number[] } | null }
 
 async function call(p: Progress, body: Record<string, unknown>): Promise<TableReply> {
   const { data, error } = await supabase.functions.invoke('poker-table', { body: { id: p.id, secret: p.secret, ...body } });
@@ -17,7 +17,8 @@ async function call(p: Progress, body: Record<string, unknown>): Promise<TableRe
   }
   return data as TableReply;
 }
-export const createTable = (p: Progress, cfg: TCfg) => call(p, { create: cfg, nick: p.nick || 'מנהל' });
+/** A private table, or a club's table when `club` is given (club owner and managers only). */
+export const createTable = (p: Progress, cfg: TCfg, club?: string) => call(p, { create: cfg, nick: p.nick || 'מנהל', ...(club ? { club } : {}) });
 export const tableCmd = (p: Progress, code: string, cmd: TableCmd) => call(p, { code, cmd });
 
 /** The table's realtime channel: server pushes of the public view, and emoji between players. */

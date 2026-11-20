@@ -47,7 +47,7 @@ const mine = (s: TS, id: string) => { const p = s.players.find(x => x.id === id)
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'method' }, 405);
-  let body: { id?: string; secret?: string; code?: string; cmd?: TableCmd; create?: Partial<TCfg>; nick?: string };
+  let body: { id?: string; secret?: string; code?: string; cmd?: TableCmd; create?: Partial<TCfg>; nick?: string; club?: string };
   try { body = await req.json(); } catch { return json({ error: 'bad request' }, 400); }
   const { id, secret } = body;
   if (!id || !secret) return json({ error: 'missing player' }, 401);
@@ -62,26 +62,40 @@ Deno.serve(async req => {
 
   /* ---------- open a new table ---------- */
   if (body.create) {
+    // a club table: only the club's owner and managers open one
+    const club = body.club && /^[0-9a-f-]{36}$/.test(body.club) ? body.club : null;
+    if (body.club && !club) return json({ error: 'מועדון לא תקין' }, 400);
+    if (club) {
+      const { data: role } = await db.rpc('poker_club_role', { p_club: club, p_player: id });
+      if (role !== 'owner' && role !== 'manager') return json({ error: 'רק מנהלי המועדון פותחים שולחנות' }, 403);
+    }
     const { data: rm, error } = await db.rpc('poker_room_create', { p_id: id, p_secret: secret, p_kind: 'table' });
     const room = Array.isArray(rm) ? rm[0] : rm;
     if (error || !room) return json({ error: 'לא הצלחנו לפתוח שולחן. נסה שוב.' }, 500);
+    if (club) await db.from('poker_rooms').update({ club_id: club }).eq('code', room.code);
     const s = newTable(room.code, id, cleanCfg(body.create));
     applyCmd(s, id, { t: 'join', nick: body.nick || 'מנהל' }, Date.now(), rnd);
     await db.from('poker_table_state').insert({ code: room.code, state: s });
-    return json({ ok: true, code: room.code, channel: room.channel, view: publicView(s, Date.now()), mine: null });
+    return json({ ok: true, code: room.code, channel: room.channel, club, view: publicView(s, Date.now()), mine: null });
   }
 
   /* ---------- a command on an existing table ---------- */
   const code = String(body.code || '').toUpperCase().slice(0, 5);
   const cmd = body.cmd;
   if (!cmd || !CMDS.has(cmd.t)) return json({ error: 'bad command' }, 400);
-  const { data: room } = await db.from('poker_rooms').select('channel, closed_at').eq('code', code).eq('kind', 'table').maybeSingle();
+  const { data: room } = await db.from('poker_rooms').select('channel, closed_at, club_id').eq('code', code).eq('kind', 'table').maybeSingle();
   if (!room) return json({ error: 'אין שולחן עם הקוד הזה' }, 404);
   for (let attempt = 0; attempt < 6; attempt++) {
     const { data: row } = await db.from('poker_table_state').select('state, ver').eq('code', code).maybeSingle();
     if (!row) return json({ error: 'אין שולחן עם הקוד הזה' }, 404);
     const s = row.state as TS;
-    if (room.closed_at && cmd.t === 'join' && !s.players.some(p => p.id === id)) return json({ error: 'השולחן הזה כבר נסגר' }, 410);
+    const seated = s.players.some(p => p.id === id);
+    if (room.closed_at && cmd.t === 'join' && !seated) return json({ error: 'השולחן הזה כבר נסגר' }, 410);
+    // a club's table seats the club's members only
+    if (room.club_id && cmd.t === 'join' && !seated && attempt === 0) {
+      const { data: role } = await db.rpc('poker_club_role', { p_club: room.club_id, p_player: id });
+      if (!role) return json({ error: 'השולחן הזה שייך למועדון. הצטרף למועדון כדי לשבת בו.' }, 403);
+    }
     const before = shape(s), wasOver = s.phase === 'over';
     if (cmd.t === 'join') (cmd as { nick: string }).nick = String(cmd.nick || body.nick || 'שחקן');
     const res = applyCmd(s, id, cmd, Date.now(), rnd);
@@ -89,7 +103,7 @@ Deno.serve(async req => {
     if (ver == null) continue; // someone saved in between: replay on the fresh state
     if (shape(s) !== before) await broadcast(room.channel, s);
     if (s.phase === 'over' && !wasOver) await db.from('poker_rooms').update({ closed_at: new Date().toISOString() }).eq('code', code);
-    return json({ ok: res.ok, error: res.error, channel: room.channel, view: publicView(s, Date.now()), mine: mine(s, id) });
+    return json({ ok: res.ok, error: res.error, channel: room.channel, club: room.club_id, view: publicView(s, Date.now()), mine: mine(s, id) });
   }
   return json({ error: 'השולחן עמוס כרגע, נסה שוב' }, 409);
 });

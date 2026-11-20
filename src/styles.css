@@ -702,3 +702,31 @@ h1, h2, h3 { margin: 0; font-weight: 800; letter-spacing: -0.01em; text-wrap: ba
 .lobby-sugg { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .lobby-sugg-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
 .lobby-sugg-row .btn { padding: 6px 14px; min-height: 0; }
+
+/* clubs: my clubs list, a club page with live tables, invite and members */
+.club-box { padding: 18px; border-radius: 24px; margin-bottom: 14px; }
+.club-box .h-md { margin-bottom: 10px; }
+.club-empty { font-size: 13.5px; line-height: 1.5; margin: 0 0 12px; }
+.club-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.club-row, .club-table, .club-member { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border-radius: 18px;
+  background: rgba(255,255,255,.05); border: 1px solid var(--glass-line); color: inherit; font: inherit; text-align: right; }
+.club-row { cursor: pointer; }
+.club-row:active { transform: scale(.99); }
+.club-ava { flex: none; width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-weight: 800; font-size: 19px;
+  color: #2a1a02; background: var(--gold); }
+.club-ava.sm { width: 34px; height: 34px; border-radius: 50%; font-size: 15px; color: #fff; background: rgba(255,255,255,.12); }
+.club-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.club-info b { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.club-info span { font-size: 12.5px; color: var(--text-2); line-height: 1.35; }
+.club-live { flex: none; font-size: 12px; font-weight: 700; color: var(--text-3); white-space: nowrap; }
+.club-live.on { color: #5fe0b5; }
+.club-live.on::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #5fe0b5; margin-inline-end: 6px; vertical-align: 1px; }
+.club-seats { flex: none; font-size: 13px; font-weight: 700; color: var(--text-2); }
+.club-form { margin-top: 4px; }
+.club-actions { display: flex; gap: 10px; }
+.club-actions > .btn { flex: 1; }
+.club-code { text-align: center; font-size: 28px; font-weight: 900; letter-spacing: .3em; color: var(--gold-1); margin: 4px 0 12px; }
+.club-mbtns { flex: none; display: flex; gap: 6px; }
+.btn.sm { min-height: 38px; padding: 0 14px; font-size: 13.5px; border-radius: 12px; }
+.btn.danger { color: var(--bad); }
+.club-actions a.btn { text-decoration: none; color: #fff; }

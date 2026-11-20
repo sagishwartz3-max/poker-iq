@@ -13,6 +13,8 @@ import { Burst } from '../ui/Burst';
 import { Chips } from '../ui/Chips';
 import { Dial } from '../ui/Dial';
 import { PeekCards } from '../ui/PeekCards';
+import { ClubList, ClubView } from '../ui/ClubPanel';
+import type { Club } from '../net/clubs';
 import { ROOM, RoomStage } from '../ui/RoomStage';
 import { useApp } from '../ui/ctx';
 import { Rich } from '../ui/Rich';
@@ -43,9 +45,13 @@ const Opt = <T,>({ label, value, set, opts }: { label: string; value: T; set: (v
 
 const MINE_KEY = 'pokeriq-table-mine';
 
-export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPlaying: (b: boolean) => void }) {
+export function Friends({ initialCode, initialClub, onPlaying }: { initialCode?: string; initialClub?: string; onPlaying: (b: boolean) => void }) {
   const { P, toast, go, update, sync } = useApp();
   const [code, setCode] = useState('');
+  const [clubId, setClubId] = useState<string | null>(null); // the club page that is open (tables return to it)
+  const [privOpen, setPrivOpen] = useState(false); // the private-table settings are folded until asked for
+  const [clubInvite, setClubInvite] = useState(initialClub || ''); // a club link joins once, not every time the list shows
+  const [tableClub, setTableClub] = useState(''); // the club name of the table I'm at
   const [joinCode, setJoinCode] = useState(initialCode || '');
   const [cfg, setCfg] = useState<TCfg>({ ...DEFAULT_CFG, rebuys: 0, learn: true });
   const [V, setV] = useState<View | null>(null);
@@ -129,17 +135,18 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
 
   /* ---------------- joining ---------------- */
   const [busy, setBusy] = useState(false);
-  const enter = async (codeIn: string | null) => {
+  const enter = async (codeIn: string | null, club?: Club) => {
     if (busy) return;
     setBusy(true);
     try {
       await savePlayer(P).catch(() => {}); // the server knows this player before the table does
-      const r = codeIn ? await tableCmd(P, codeIn.toUpperCase(), { t: 'join', nick: P.nick || 'שחקן' }) : await createTable(P, cfg);
+      const r = codeIn ? await tableCmd(P, codeIn.toUpperCase(), { t: 'join', nick: P.nick || 'שחקן' }) : await createTable(P, cfg, club?.id);
       if (!r.ok || !r.view || !r.channel) { toast(r.error || 'החיבור לשולחן נכשל. נסה שוב.'); return; }
       const c = r.code || codeIn!.toUpperCase();
       try { localStorage.setItem(MINE_KEY, c); } catch { /* storage off */ }
       live.current?.leave();
       S.current = null; lastAt.current = 0; codeRef.current = c;
+      setTableClub(r.club && club && r.club === club.id ? club.name : r.club ? 'מועדון' : '');
       setPractice(false); setCode(c); setMine(null); setLog([]); setEarned(0); setFb(null);
       takeView(r.view, r.mine);
       const l = new TableLive(r.channel, v => takeView(v), (from, e) => setBubbles(b => ({ ...b, [from]: { e, k: Date.now() } })));
@@ -295,16 +302,8 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   const link = `${PUBLIC_URL}?table=${code}`;
   const sh = shareLinks(`🃏 ${P.nick || 'חבר'} פתח שולחן פוקר ב-Poker IQ. בוא לשחק! קוד: ${code}`, link);
 
-  /* ---------------- lobby: create or join ---------------- */
-  if (!code) return (
-    <div className="screen">
-      <div className="play-top" style={{ marginBottom: 12 }}>
-        <button className="icon-btn" onClick={() => go('duel')} aria-label="חזרה">{I.back}</button>
-        <div className="play-title"><b>שולחן פוקר לחברים</b><span>טקסס הולדם, ז׳יטונים בלבד</span></div>
-      </div>
-      {lastHost && <button className="glass list-btn" onClick={() => enter(lastHost)}><span>חזרה לשולחן האחרון ({lastHost})</span><span style={{ width: 20 }}>{I.back}</span></button>}
-      <motion.div className="glass" style={{ padding: 18, borderRadius: 24, marginBottom: 14 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-        <h3 className="h-md" style={{ marginBottom: 12 }}>פתח שולחן (אתה המנהל)</h3>
+  // table settings, used for a private table and for a club's table
+  const settingsForm = (<>
         <Opt label="מצב משחק" value={gameMode} set={mode => { setGameMode(mode); setCfg(c => ({ ...c, levelMin: mode === 'טורבו' ? 5 : mode === 'טורניר' ? 10 : 0, rebuys: mode === 'טורניר' || c.buyIn ? 0 : 2, turnSec: mode === 'טורבו' ? 20 : 30 })); }} opts={[['רגיל', 'רגיל'], ['טורבו', 'טורבו'], ['טורניר', 'טורניר']]} />
         <Opt label="ז׳יטונים לכל שחקן" value={cfg.stack} set={v => setCfg({ ...cfg, stack: v })} opts={[[1000, '1,000'], [2000, '2,000'], [5000, '5,000'], [10000, '10,000']]} />
         <Opt label="הבליינדים עולים כל" value={cfg.levelMin} set={v => setCfg({ ...cfg, levelMin: v })} opts={[[0, 'לא עולים'], [5, '5 דק׳'], [10, '10 דק׳'], [15, '15 דק׳'], [20, '20 דק׳']]} />
@@ -313,7 +312,27 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         {!!cfg.buyIn && <p className="muted" style={{ fontSize: 12, margin: '-6px 0 10px' }}>כל שחקן משלם {fmt(cfg.buyIn)} מטבעות מהארנק כשהמשחק מתחיל. בלי ריביי ובלי מתנות. עד 4 שחקנים: הזוכה לוקח הכול · 5-6: 70/30 · 7+: 50/30/20. מטבעות משחק בלבד, בלי כסף אמיתי.</p>}
         <Opt label="מצב לימוד (לכל השחקנים)" value={!!cfg.learn} set={v => setCfg({ ...cfg, learn: v })} opts={[[true, 'פועל: מאמן עם שאלות, שיעורים ומשוב'], [false, 'כבוי']]} />
         <Opt label="זמן לכל תור" value={cfg.turnSec} set={v => setCfg({ ...cfg, turnSec: v })} opts={[[20, '20 שנ׳'], [30, '30 שנ׳'], [45, '45 שנ׳'], [60, 'דקה']]} />
-        <button className="btn gold wide" disabled={busy || (cfg.buyIn ?? 0) > (P.coins ?? 0)} onClick={() => enter(null)}>{(cfg.buyIn ?? 0) > (P.coins ?? 0) ? 'אין לך מספיק מטבעות לדמי הכניסה' : 'פתח שולחן'}</button>
+  </>);
+
+  /* ---------------- lobby: create or join ---------------- */
+  if (!code && clubId) return (
+    <ClubView id={clubId} busy={busy} settings={settingsForm} onBack={() => setClubId(null)}
+      onEnter={(c, club) => void enter(c, club)} onOpenTable={club => (cfg.buyIn ?? 0) > (P.coins ?? 0) ? toast('אין לך מספיק מטבעות לדמי הכניסה') : void enter(null, club)} />
+  );
+  if (!code) return (
+    <div className="screen">
+      <div className="play-top" style={{ marginBottom: 12 }}>
+        <button className="icon-btn" onClick={() => go('duel')} aria-label="חזרה">{I.back}</button>
+        <div className="play-title"><b>מועדונים ושולחנות</b><span>טקסס הולדם עם החברים, ז׳יטונים בלבד</span></div>
+      </div>
+      <ClubList onOpen={id => { setClubInvite(''); setClubId(id); }} initialJoin={clubInvite} />
+      {lastHost && <button className="glass list-btn" onClick={() => enter(lastHost)}><span>חזרה לשולחן האחרון ({lastHost})</span><span style={{ width: 20 }}>{I.back}</span></button>}
+      <motion.div className="glass" style={{ padding: 18, borderRadius: 24, marginBottom: 14 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+        <h3 className="h-md" style={{ marginBottom: privOpen ? 12 : 6 }}>שולחן פרטי (אתה המנהל)</h3>
+        {!privOpen ? <><p className="muted club-empty">שולחן חד-פעמי בלי מועדון: פותחים, שולחים קוד לחברים ומשחקים.</p>
+          <button className="btn wide" onClick={() => setPrivOpen(true)}>הגדרות ופתיחת שולחן</button></> : <>
+        {settingsForm}
+        <button className="btn gold wide" disabled={busy || (cfg.buyIn ?? 0) > (P.coins ?? 0)} onClick={() => enter(null)}>{(cfg.buyIn ?? 0) > (P.coins ?? 0) ? 'אין לך מספיק מטבעות לדמי הכניסה' : 'פתח שולחן'}</button></>}
       </motion.div>
       <div className="glass" style={{ padding: 18, borderRadius: 24 }}>
         <h3 className="h-md">הצטרפות לשולחן</h3>
@@ -476,9 +495,8 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
       <div className="lounge" aria-hidden="true" />
       <div className="pro-top">
         <button className="pro-round room-back" onClick={leave} aria-label="יציאה">{I.back}</button>
-        <div className="room-title"><b>שולחן חברים</b><button onClick={() => practice ? toast('שולחן אימון — הבוטים אינם שחקנים אמיתיים') : sh.copy().then(ok => toast(ok ? 'ההזמנה הועתקה' : link))}>{practice ? 'אימון מול בוטים' : `קוד ${code} · העתק הזמנה`}{learn ? ' · מצב לימוד' : ''}</button></div>
+        <div className="room-title"><b>{tableClub || 'שולחן חברים'}</b><button onClick={() => practice ? toast('שולחן אימון — הבוטים אינם שחקנים אמיתיים') : sh.copy().then(ok => toast(ok ? 'ההזמנה הועתקה' : link))}>{practice ? 'אימון מול בוטים' : `קוד ${code} · העתק הזמנה`}{learn ? ' · מצב לימוד' : ''}</button></div>
         <div className="pro-pill room-blinds"><span>בליינדים <b className="num">{V.sb}/{V.bb}</b></span>{V.paused ? <em>הפסקה</em> : V.levelEnds ? <em className="num">{mmss}</em> : <em className="num">יד {V.handNo}</em>}</div>
-        <div className="room-wallet"><span className="wallet-coins" aria-hidden="true"><i /><i /><i /></span><div><b className="num">{fmt(P.coins ?? 0)}</b><small>המטבעות שלי</small></div></div>
       </div>
 
       <div className={`ptable ${helpCard === 'review' ? 'with-review' : ''}`}>

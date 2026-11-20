@@ -103,3 +103,11 @@ npm run test:engine
 ### התאמה לתמונת הייחוס
 
 החדר מצויר על קנבס 1672×941 עם שינוי קנה מידה אחיד. שולחן, רקע, דילר, דיוקנאות ויד הם נכסים נפרדים; הנתונים והפעולות נשארים רכיבים חיים. תנועת היד, פינות הקלפים, חלוקת הקלפים ותנועת הצ׳יפים מונפשות בנפרד. זהו ממשק דו־ממדי בשכבות עם פרספקטיבה (2.5D), לא מודל תלת־ממדי של המקור ולא התאמה פיקסלית מובטחת. לטלפון מומלצת תצוגה אופקית; במצב אנכי נשמר היחס ומוצגת הודעת סיבוב.
+
+## Clubs
+
+A club is a group of friends with its own list of live tables (`src/ui/ClubPanel.tsx`, `src/net/clubs.ts`).
+- Anyone with the club's 6-character code or link (`?club=CODE`) joins straight away.
+- Only the owner and the managers the owner appoints open tables in the club. Only members can sit at a club's table (checked in the `poker-table` edge function).
+- The owner can appoint or remove managers, remove members, and close the club. Members can leave.
+- The database side is in `supabase/migrations/20261120_clubs.sql`: the tables `poker_clubs` and `poker_club_members`, a `club_id` column on `poker_rooms`, and the security-definer RPCs `poker_club_*`.
