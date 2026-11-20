@@ -1,16 +1,14 @@
 import { isRed, RN, SUITS } from '../engine/cards';
 
 /**
- * My two cards, always face up in front of me (the hold-to-peek gesture was removed: on phones the hand covered the cards).
- * At the showdown the cards that make the winning hand light up and the others fade.
+ * My two cards, face up and upright in front of my seat, slightly fanned like a hand held at the table.
+ * The name of my hand is shown on my seat's plate. At the showdown the cards that make the winning hand light up and the others fade.
  */
 export function PeekCards({ cards, hand, folded, hl }: { cards: number[]; hand: string; folded?: boolean; hl?: (c: number) => '' | 'hl' | 'lo' }) {
-  return <div className={`peek-cards is-revealed ${folded ? 'is-folded' : ''}`} role="img"
-    aria-label={`הקלפים שלך: ${cards.map(c => RN[c >> 2] + SUITS[c & 3]).join(', ')}. ${hand}`}>
-    <span className="peek-hint">{folded ? `Fold · ${hand}` : hand}</span>
-    <span className="peek-pair" aria-hidden="true">{cards.map((c, i) => <span key={i} className={`peek-card ${isRed(c) ? 'red' : ''} ${hl?.(c) ?? ''}`}>
-      <span className="peek-back"><span>♠</span></span>
-      <span className="peek-face"><b>{RN[c >> 2]}</b><i>{SUITS[c & 3]}</i><span>{SUITS[c & 3]}</span></span>
-    </span>)}</span>
+  return <div className={`peek-cards hero-cards ${folded ? 'is-folded' : ''}`} role="img"
+    aria-label={`הקלפים שלך: ${cards.map(c => RN[c >> 2] + SUITS[c & 3]).join(', ')}. ${folded ? 'Fold · ' : ''}${hand}`}>
+    {cards.map((c, i) => <span key={i} className={`card3d hero-card ${isRed(c) ? 'red' : ''} ${hl?.(c) ?? ''}`} aria-hidden="true">
+      <span className="face"><span className="rk">{RN[c >> 2]}</span><span className="su">{SUITS[c & 3]}</span><span className="big">{SUITS[c & 3]}</span></span>
+    </span>)}
   </div>;
 }

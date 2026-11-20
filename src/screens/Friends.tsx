@@ -22,6 +22,7 @@ import { asset } from '../native';
 const rnd = () => crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
 const fmt = (n: number) => n.toLocaleString('he-IL');
 const EMOJIS = ['👍', '😂', '😱', '🔥', '🤡', '👏'];
+const AVATARS = ['10_avatar_hero', '05_avatar_top_left', '07_avatar_left', '06_avatar_top_right', '08_avatar_right', '09_avatar_lower_right'];
 
 function MiniCard({ c, size = 30, down = false, delay = 0, hl = '' }: { c: number; size?: number; down?: boolean; delay?: number; hl?: string }) {
   return (
@@ -203,13 +204,13 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   useEffect(() => { if (!practice && code && V?.phase === 'hand' && me?.inHand && mine?.hand !== V.handNo && !document.hidden) void send({ t: 'beat', vis: true }, true); }, [V?.handNo, V?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // tell everyone who joined, and what the manager changed in the waiting room
-  const seen = useRef<Set<string> | null>(null);
+  const seen = useRef<{ code: string; ids: Set<string> } | null>(null);
   useEffect(() => {
     if (!V) return;
-    const ids = V.players.map(p => p.id);
-    if (seen.current) for (const p of V.players) if (!seen.current.has(p.id) && p.id !== P.id) toast(V.handNo > 0 ? `${p.nick} הצטרף ויקבל קלפים ביד הבאה` : `${p.nick} הצטרף לשולחן`);
-    seen.current = new Set(ids);
-  }, [V?.players.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    const was = seen.current?.code === code ? seen.current.ids : null; // a new table: nobody "joined" yet
+    if (was) for (const p of V.players) if (!was.has(p.id) && p.id !== P.id) toast(V.handNo > 0 ? `${p.nick} הצטרף ויקבל קלפים ביד הבאה` : `${p.nick} הצטרף לשולחן`);
+    seen.current = { code, ids: new Set(V.players.map(p => p.id)) };
+  }, [V?.players.length, code]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (V?.note && (!isHost || !V.note.text.startsWith('המנהל:')) && Date.now() + skew - V.note.at < 8000) toast(V.note.text); }, [V?.note?.at]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setRaiseTo(null); if (myTurn) sfx.tick(); }, [myTurn, V?.street]);
   useEffect(() => { if (V?.last) sfx.chip(); }, [V?.last?.id, V?.last?.text, V?.pot]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -424,23 +425,29 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
 
   /* ---------------- the table ---------------- */
   const N = V.players.length, hi = Math.max(0, V.players.findIndex(p => p.id === P.id));
-  // Seat centers are authored in the camera plane of each reference image (landscape 1672×941, portrait 940×1672).
+  // Seats sit evenly around the table's oval, me at the bottom. Coordinates are in the room's canvas (portrait 940×1672, landscape 1672×941).
   const room = tall ? ROOM.tall : ROOM.wide;
-  const seats = tall
-    ? (N <= 6
-      ? [[383, 1222], [137, 602], [193, 362], [745, 362], [793, 602], [780, 840]]
-      : [[383, 1222], [160, 840], [137, 602], [193, 362], [365, 290], [575, 290], [745, 362], [793, 602], [780, 840]])
-    : (N <= 6
-      ? [[610, 815], [210, 420], [410, 230], [1215, 230], [1455, 420], [1325, 595]]
-      : [[610, 815], [200, 590], [180, 425], [300, 260], [550, 220], [1110, 220], [1390, 260], [1480, 425], [1390, 590]]);
-  const pos = (i: number) => {
-    const relative = (i - hi + N) % N;
-    const slot = N === 2 && relative === 1 ? seats[tall ? 3 : 2] : seats[relative];
-    return { x: slot[0] / room.w * 100, y: slot[1] / room.h * 100 };
+  const C = tall ? { x: 470, y: 760, rx: 395, ry: 515 } : { x: 836, y: 448, rx: 610, ry: 330 };
+  const HERO = tall ? { x: 470, y: 1262 } : { x: 836, y: 788 };
+  const slotAt = (relative: number) => {
+    if (relative === 0) return HERO;
+    const a = (90 + relative * 360 / N) * Math.PI / 180;
+    const y = C.y + C.ry * Math.sin(a);
+    return { x: C.x + C.rx * Math.cos(a), y: tall ? y : Math.min(y, 640) };
   };
-  const potAt = tall ? { x: '50%', y: '50%' } : { x: '49%', y: '59%' };
-  const mid = (p: { x: number; y: number }, t: number) => ({ x: p.x + (50 - p.x) * t, y: p.y + (54 - p.y) * t });
+  const pos = (i: number) => { const q = slotAt((i - hi + N) % N); return { x: q.x / room.w * 100, y: q.y / room.h * 100 }; };
+  // bets and the dealer button sit between a seat and the middle of the table
+  // the dealer button: a little in from the seat, turned toward the next seat so it never sits on the bet
+  const dealerAt = (i: number) => {
+    const r = (i - hi + N) % N;
+    if (r === 0) return { x: (HERO.x + (tall ? 128 : 124)) / room.w * 100, y: (HERO.y - (tall ? 70 : 58)) / room.h * 100 };
+    const a = (90 + r * 360 / N - (tall ? 14 : 11)) * Math.PI / 180;
+    return { x: (C.x + C.rx * .72 * Math.cos(a)) / room.w * 100, y: (C.y + C.ry * .72 * Math.sin(a)) / room.h * 100 };
+  };
+  const toward = (i: number, t: number) => { const q = pos(i), c = { x: C.x / room.w * 100, y: C.y / room.h * 100 }; return { x: q.x + (c.x - q.x) * t, y: q.y + (c.y - q.y) * t }; };
+  const potAt = tall ? { x: '50%', y: '37%' } : { x: '50%', y: '33%' };
   const turnP = V.players.find(p => p.id === V.turn);
+  const heroHand = myCards ? (resolved && V.hands?.[P.id]?.name) || madeHand(myCards, V.board.filter((_, i) => !sd || i < (V.runFrom ?? 5) || tm.cardAt(i) <= tShow)).name : '';
   const lastActor = V.last ? V.players.findIndex(p => p.id === V.last!.id) : -1;
   const potNow = V.pot;
   // which learning card sits above my buttons: the lesson + question on my turn, a quick verdict right after I act, the hand review at the showdown
@@ -454,7 +461,6 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   return (
     <RoomStage onLayout={setTall} label={practice ? 'שולחן אימון מול בוטים' : 'שולחן פוקר לחברים'}>{() => (<>
       <div className="lounge" aria-hidden="true" />
-      <img className="room-dealer" src={asset('/table/dealer.webp')} alt="" aria-hidden="true" />
       <div className="pro-top">
         <button className="pro-round room-back" onClick={leave} aria-label="יציאה">{I.back}</button>
         <div className="room-title"><b>שולחן חברים</b><button onClick={() => practice ? toast('שולחן אימון — הבוטים אינם שחקנים אמיתיים') : sh.copy().then(ok => toast(ok ? 'ההזמנה הועתקה' : link))}>{practice ? 'אימון מול בוטים' : `קוד ${code} · העתק הזמנה`}{learn ? ' · מצב לימוד' : ''}</button></div>
@@ -462,14 +468,13 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         <div className="room-wallet"><span className="wallet-coins" aria-hidden="true"><i /><i /><i /></span><div><b className="num">{fmt(P.coins ?? 0)}</b><small>המטבעות שלי</small></div></div>
       </div>
 
-      <div className="ptable">
+      <div className={`ptable ${helpCard === 'review' ? 'with-review' : ''}`}>
         <div className="rail"><div className="pfelt"><div className="pfelt-line" /><div className="pfelt-logo">POKER IQ</div></div></div>
         <div className="pboard">{V.board.map((c, i) => <MiniCard key={`${V.handNo}-${i}`} c={c} size={145} hl={hlOf(c)}
           delay={sd && i >= (V.runFrom ?? 5) ? Math.max(0, tm.cardAt(i) - tShow) : i < 3 ? i * 0.12 : 0} />)}</div>
         {!resolved && <motion.div className="ppot" key={V.handNo} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
           <Chips amount={potShown} unit={V.bb} size={38} /><span>קופה</span><b className="num">{fmt(potShown)}</b>
         </motion.div>}
-        <div className="room-center-chips"><Chips amount={potShown} unit={V.bb} size={50} /></div>
         {lastActor >= 0 && V.phase === 'hand' && V.last && !['Check', 'Fold', 'צ׳ק', 'פולד'].includes(V.last.text) && (
           <motion.div key={`${V.handNo}-${V.pot}-${V.last.id}`} className="chip-flight"
             initial={{ left: `${pos(lastActor).x}%`, top: `${pos(lastActor).y}%`, opacity: 1, scale: .8 }}
@@ -490,9 +495,9 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         {V.players.map((p, i) => {
           const xy = pos(i), isMe = p.id === P.id, turn = V.turn === p.id && V.phase === 'hand';
           const shown = V.shown[p.id], won = resolved && V.winners.find(w => w.id === p.id), sh = V.hands?.[p.id];
-          const bub = bubbles[p.id], bp = tall ? { x: xy.x + (xy.x < 50 ? 4 : -4), y: xy.y + (isMe ? -9 : 5.6) } : { x: xy.x + (xy.x < 50 ? 1 : -1), y: xy.y + (isMe ? -12 : 10) }, dp = mid(xy, 0.12);
-          const relative = (i - hi + N) % N;
-          const avatar = ['10_avatar_hero', '07_avatar_left', '05_avatar_top_left', '06_avatar_top_right', '08_avatar_right', '09_avatar_lower_right'][relative % 6];
+          const bub = bubbles[p.id], bp = toward(i, isMe ? (tall ? .45 : .56) : .36), dp = dealerAt(i);
+          // the same face for the same player on every phone (by seat order), and the bots' faces match their names
+          const avatar = AVATARS[i % AVATARS.length];
           return (
             <div key={p.id}>
               <div className={`pseat ${tall && xy.x > 50 ? 'flip' : ''} ${tall && !isMe ? (xy.y > 44 || xy.y < 19 ? 'sd-down' : xy.y < 25 ? 'sd-side' : '') : ''} ${p.inHand && !p.folded ? '' : 'dim'} ${isMe ? 'me' : ''} ${turn ? 'turn' : ''} ${won ? 'won' : ''}`} style={{ left: `${xy.x}%`, top: `${xy.y}%` }}>
@@ -504,14 +509,14 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
                   {turn && <svg className="pring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" pathLength="100" strokeDasharray={`${Math.min(100, (left / turnSecs(V.cfg)) * 100)} 100`} /></svg>}
                   {turn && <b className="psec num">{Math.ceil(left)}</b>}
                 </div>
-                <div className="pplate"><span className="pname">{isMe ? 'אני' : p.nick}{p.away ? ' · לא מחובר' : p.sitOut ? ' · בחוץ' : ''}</span>
+                <div className="pplate"><span className="pname">{isMe ? (myCards && me?.folded ? 'Fold' : heroHand || 'אני') : p.nick}{p.away ? ' · לא מחובר' : p.sitOut ? ' · בחוץ' : ''}</span>
                   <span className="pstack num">{p.out ? 'בחוץ' : p.allIn && p.inHand && !sd ? 'All-in' : fmt(sd && !resolved ? p.stack - wonBy(p.id) : p.stack)}</span></div>
                 {V.last?.id === p.id && V.phase === 'hand' && <motion.span key={V.last.text + V.pot} className="psaid" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>{V.last.text}</motion.span>}
                 <AnimatePresence>{bub && now - bub.k < 2500 && <motion.span key={bub.k} className="bubble" initial={{ scale: 0, y: 0 }} animate={{ scale: 1.2, y: -30 }} exit={{ opacity: 0 }}>{bub.e}</motion.span>}</AnimatePresence>
               </div>
               {p.bet > 0 && !sd && <motion.div className="pbet" initial={{ left: `${xy.x}%`, top: `${xy.y}%`, opacity: 0 }} animate={{ left: `${bp.x}%`, top: `${bp.y}%`, opacity: 1 }} transition={{ type: 'spring', stiffness: 200, damping: 22 }}>
                 <Chips amount={p.bet} unit={V.bb} size={33} /><b className="num">{fmt(p.bet)}</b></motion.div>}
-              {i === V.btn && <div className="pdealer" style={{ left: `${dp.x + (xy.x < 50 ? 7 : -7)}%`, top: `${dp.y}%` }}>D</div>}
+              {i === V.btn && <div className="pdealer" style={{ left: `${dp.x}%`, top: `${dp.y}%` }}>D</div>}
             </div>
           );
         })}
@@ -528,7 +533,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
               : <span className="pwhy">כל השאר עשו Fold, אז הקופה {V.winners[0].id === P.id ? 'שלך' : 'שלו'} בלי להראות קלפים</span>}
           </motion.div>); })()}
       </AnimatePresence>
-        {myCards && <div className="phero"><PeekCards key={V.handNo} cards={myCards} folded={!!me?.folded} hl={hlOf} hand={(resolved && V.hands?.[P.id]?.name) || madeHand(myCards, V.board.filter((_, i) => !sd || i < (V.runFrom ?? 5) || tm.cardAt(i) <= tShow)).name} /></div>}
+        {myCards && <div className="phero"><PeekCards key={V.handNo} cards={myCards} folded={!!me?.folded} hl={hlOf} hand={heroHand} /></div>}
       </div>
 
       <div className={`pdock ${helpCard ? 'with-help' : ''}`}>

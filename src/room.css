@@ -359,3 +359,127 @@
 .prev-board .card3d, .prev-cards .card3d { position: relative; }
 .reference-room .prev-board .card3d .rk { font-size: 20px; } .reference-room .prev-board .card3d .su { font-size: 16px; } .reference-room .prev-board .card3d .big { font-size: 30px; }
 .reference-room .prev-cards .card3d .rk { font-size: 14px; } .reference-room .prev-cards .card3d .su { font-size: 12px; } .reference-room .prev-cards .card3d .big { font-size: 20px; }
+
+/* =====================================================================
+   Clean table (both orientations): a flat top-down table drawn in CSS, no room photo or dealer,
+   seats as avatar + plate under it, upright cards, chips in front of each seat.
+   Selectors start with .room-frame .reference-room so they win over the older layers above.
+   ===================================================================== */
+.room-frame .reference-room .lounge { background: radial-gradient(ellipse at 50% 42%, #18201c 0%, #0b0e0c 58%, #050605 100%); filter: none; transform: none; }
+.room-frame .reference-room .lounge::after { display: none; }
+.room-frame .reference-room .room-dealer, .room-frame .reference-room .room-center-chips { display: none; }
+/* table */
+.room-frame .reference-room .rail { inset: auto; left: 236px; top: 128px; width: 1200px; height: 640px; padding: 0; border-radius: 320px;
+  background: linear-gradient(180deg, #2b2f2d, #141716 55%, #0c0e0d); box-shadow: 0 0 0 2px #040504, inset 0 2px 0 #ffffff1c, inset 0 -2px 0 #0008, 0 34px 70px #000d; }
+.room-frame .reference-room .rail::before { display: none; }
+.room-frame .reference-room .pfelt { display: block; position: absolute; inset: 20px; width: auto; height: auto; border-radius: 300px; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 44%, #2e8845 0%, #247339 42%, #195e2e 78%, #134d25 100%);
+  box-shadow: inset 0 0 0 2px #00000055, inset 0 12px 40px #0008, inset 0 -8px 26px #0006; }
+.room-frame .reference-room .pfelt::before { opacity: .35; }
+.room-frame .reference-room .pfelt-line { inset: 64px 120px; border-radius: 999px; border: 2px solid #ffffff10; }
+.room-frame .reference-room .pfelt-logo { display: none; }
+.room-frame .reference-room.vertical .rail { left: 60px; top: 230px; width: 820px; height: 1060px; border-radius: 410px; }
+.room-frame .reference-room.vertical .pfelt { border-radius: 390px; }
+.room-frame .reference-room.vertical .pfelt-line { inset: 120px 76px; }
+
+/* board, pot, blinds written on the felt */
+.room-frame .reference-room .pboard { left: 836px; top: 330px; gap: 10px; transform: translateX(-50%); }
+.room-frame .reference-room .pboard .card3d { --cw: 108px !important; }
+.room-frame .reference-room.vertical .pboard { left: 470px; top: 614px; }
+.room-frame .reference-room.vertical .pboard .card3d { --cw: 104px !important; }
+.room-frame .reference-room .card3d .rk { font: 800 calc(var(--cw) * .36)/1 system-ui, -apple-system, 'Segoe UI', Arial, sans-serif; letter-spacing: -.04em; top: 5%; left: 9%; }
+.room-frame .reference-room .card3d .su { font-size: calc(var(--cw) * .26); top: 33%; left: 10%; }
+.room-frame .reference-room .card3d .big { font-size: calc(var(--cw) * .6); right: 7%; bottom: 3%; }
+.room-frame .reference-room .card3d .face { border-radius: calc(var(--cw) * .1); background: #fbfaf6; box-shadow: 0 4px 10px #0007, 0 0 0 1px #0000002e; }
+.room-frame .reference-room .card3d.red .face { color: #d0202e; }
+.room-frame .reference-room .ppot { left: 836px; top: 280px; min-width: 0; min-height: 0; padding: 4px 24px; gap: 12px; flex-direction: row; align-items: baseline; clip-path: none;
+  border: 0; border-radius: 24px; background: #00000059; box-shadow: none; font-size: 22px; color: #ffffffb3; }
+.room-frame .reference-room .ppot b { font-size: 32px; color: #ffd76a; }
+.room-frame .reference-room .ppot > .chips { display: none; }
+.room-frame .reference-room .ppot > span:not(.chips) { margin: 0; }
+.room-frame .reference-room.vertical .ppot { left: 470px; top: 566px; }
+.room-frame .reference-room .room-blinds { left: 636px; top: 494px; width: 400px; height: 40px; padding: 0; gap: 14px; background: none; border: 0; box-shadow: none; font-size: 20px; color: #ffffff6e; translate: none; }
+.room-frame .reference-room .room-blinds b { color: #ffffff8c; font-weight: 600; }
+.room-frame .reference-room .room-blinds em { color: #ffffff8c; border-color: #ffffff26; padding-inline-start: 14px; }
+.room-frame .reference-room.vertical .room-blinds { left: 270px; top: 790px; font-size: 22px; }
+
+/* seats: the avatar is the seat's center, the plate hangs under it */
+.room-frame .reference-room .pseat { width: 170px; height: 100px; }
+.room-frame .reference-room .pseat .pavatar, .room-frame .reference-room .pseat.flip .pavatar { left: 35px; right: auto; top: 0; width: 100px; height: 100px; border-radius: 50%; background: #1b1f1d;
+  box-shadow: 0 0 0 3px #101211, 0 0 0 4px #ffffff24, 0 8px 16px #0009; }
+.room-frame .reference-room .pseat .pplate, .room-frame .reference-room .pseat.flip .pplate { left: 5px; top: 84px; width: 160px; height: 62px; padding: 4px 8px; border-radius: 12px;
+  border: 1px solid #ffffff1f; background: linear-gradient(#20252299, #0d0f0e) , #0d0f0e; box-shadow: 0 6px 14px #0009; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; z-index: 3; }
+.room-frame .reference-room .pseat .pname { max-width: 148px; font-size: 20px; font-weight: 600; color: #e7ebe8; text-align: center; }
+.room-frame .reference-room .pseat .pstack { font-size: 25px; font-weight: 700; color: #ffd76a; }
+.room-frame .reference-room .pseat.turn .pavatar { box-shadow: 0 0 0 3px #101211, 0 0 0 6px #5fe08a, 0 0 26px #5fe08a88; }
+.room-frame .reference-room .pseat.turn .pplate { border-color: #5fe08a99; }
+.room-frame .reference-room .pseat.won .pavatar { box-shadow: 0 0 0 3px #101211, 0 0 0 6px #ffd76a, 0 0 30px #ffd76a99; }
+.room-frame .reference-room .pseat.won .pplate { border-color: #ffd76a; }
+.room-frame .reference-room .pseat .pring { display: none; }
+.room-frame .reference-room .pseat .psec, .room-frame .reference-room .pseat.flip .psec { left: 35px; right: auto; top: 0; width: 100px; height: 100px; border: 0; background: #000000a6; font-size: 34px; z-index: 3; color: #fff; }
+.room-frame .reference-room .pseat .pbacks, .room-frame .reference-room .pseat.flip .pbacks { top: -22px; left: 96px; right: auto; opacity: 1; z-index: 3; }
+.room-frame .reference-room .pseat .pbacks i { width: 34px; height: 48px; border-radius: 5px; border: 2px solid #f1ece0; background: repeating-linear-gradient(45deg, #b3263a 0 4px, #8a1828 4px 8px); }
+.room-frame .reference-room .pseat .psaid, .room-frame .reference-room .pseat.flip .psaid { top: 152px; left: 50%; right: auto; translate: -50% 0; font-size: 18px; padding: 2px 14px; z-index: 4; }
+/* shown cards cover the avatar (like a hand turned over at the seat); the hand's name goes under the plate */
+.room-frame .reference-room .pseat .pshown, .room-frame .reference-room .pseat.flip .pshown, .room-frame .reference-room .pseat.sd-down .pshown, .room-frame .reference-room .pseat.sd-side .pshown {
+  top: -34px; left: 50%; right: auto; translate: -50% 0; width: auto; flex-wrap: nowrap; gap: 4px; z-index: 4; }
+.room-frame .reference-room .pseat .pshown .card3d { --cw: 62px !important; }
+.room-frame .reference-room .pseat .pshown .phand { position: absolute; top: 186px; left: 50%; translate: -50% 0; margin: 0; font-size: 18px; }
+/* me */
+.room-frame .reference-room .pseat.me { left: 836px !important; top: 788px !important; width: 200px; height: 112px; }
+.room-frame .reference-room.vertical .pseat.me { left: 470px !important; top: 1262px !important; }
+.room-frame .reference-room .pseat.me .pavatar { left: 44px; width: 112px; height: 112px; }
+.room-frame .reference-room .pseat.me .psec { left: 44px; top: 0; width: 112px; height: 112px; }
+.room-frame .reference-room .pseat.me .pplate { left: 0; top: 94px; width: 200px; height: 64px; padding: 4px 10px; }
+.room-frame .reference-room .pseat.me .pname { font-size: 20px; color: #ffe39a; max-width: 186px; }
+.room-frame .reference-room .pseat.me .pstack { font-size: 27px; color: #fff; }
+.room-frame .reference-room .pseat.me .psaid { top: 164px; }
+.room-frame .reference-room .pseat.dim { opacity: .55; filter: grayscale(.6); }
+/* my two cards: upright, fanned over the top of my avatar */
+.room-frame .reference-room .peek-cards.hero-cards { left: 836px; top: 614px; width: auto; height: auto; translate: -50% 0; display: flex; direction: ltr; z-index: 12; }
+.room-frame .reference-room.vertical .peek-cards.hero-cards { left: 470px; top: 1058px; }
+.hero-cards .hero-card { --cw: 96px; display: block; animation: hero-deal .45s cubic-bezier(.2,.8,.2,1) both; transition: translate .35s, opacity .35s, filter .35s; }
+.vertical .hero-cards .hero-card { --cw: 106px; }
+.hero-cards .hero-card:first-child { rotate: -7deg; margin-right: -14px; transform-origin: 50% 100%; }
+.hero-cards .hero-card + .hero-card { rotate: 7deg; transform-origin: 50% 100%; animation-delay: .08s; }
+.hero-cards .hero-card .face { position: absolute; inset: 0; display: block; }
+.hero-cards .hero-card.hl { translate: 0 -16px; filter: drop-shadow(0 0 14px #f3d27a); }
+.hero-cards .hero-card.lo { opacity: .45; }
+.hero-cards.is-folded .hero-card { opacity: .4; filter: grayscale(.7); }
+@keyframes hero-deal { from { opacity: 0; translate: 0 -260px; scale: .4; } to { opacity: 1; translate: 0 0; scale: 1; } }
+@media (prefers-reduced-motion: reduce) { .hero-cards .hero-card { animation: none; } }
+
+/* chips in front of each seat, the dealer button beside it */
+.room-frame .reference-room .pbet { font-size: 22px; gap: 8px; align-items: center; z-index: 7; }
+.room-frame .reference-room .pbet b { background: #000000a0; padding: 1px 12px; border-radius: 14px; text-shadow: none; }
+.room-frame .reference-room .pdealer { width: 38px; height: 38px; font-size: 21px; z-index: 7; }
+
+/* result banner just under the board */
+.room-frame .reference-room .pwin { top: 536px; }
+.room-frame .reference-room.vertical .pwin { top: 838px; left: 470px; max-width: 760px; }
+
+/* bottom of the portrait screen: status line, buttons, tools */
+.room-frame .reference-room.vertical .pstatus { top: 1386px; }
+.room-frame .reference-room.vertical .pactions:not(.praise .pactions) { top: 1428px; }
+.room-frame .reference-room.vertical .ptools { top: 1560px; }
+.room-frame .reference-room.vertical .pdock > .pro-note { top: 1100px; }
+.room-frame .reference-room.vertical .psitout { top: 1000px; }
+/* the coach sits on the felt between the board and my cards, so my cards, seat and buttons stay in view */
+.room-frame .reference-room.vertical .phelp { top: 800px; bottom: auto; left: 70px; width: 800px; max-height: 270px; overflow: hidden; translate: none; font-size: 27px; padding: 12px 22px; background: #0b1410f2; }
+.room-frame .reference-room.vertical .phelp small { font-size: 21px; }
+.room-frame .reference-room:not(.vertical) .phelp { top: 488px; bottom: auto; left: 836px; translate: -50% 0; width: 820px; max-height: 128px; overflow: hidden; font-size: 20px; padding: 8px 18px; gap: 2px; background: #0b1410f2; }
+.room-frame .reference-room:not(.vertical) .phelp small { font-size: 16px; }
+.room-frame .reference-room:not(.vertical) .phelp .pans-btn { font-size: 16px; }
+/* while the hand review is up, the result banner moves above the board */
+.room-frame .reference-room .with-review .pwin { top: 266px; }
+.room-frame .reference-room.vertical .with-review .pwin { top: 492px; }
+
+/* pre-actions read as tick boxes: choose now, it plays when your turn comes */
+.room-frame .reference-room .pre-actions .pbtn { flex-direction: row; gap: 12px; }
+.room-frame .reference-room .pre-actions .pbtn::before { content: ''; flex: none; width: 26px; height: 26px; border-radius: 7px; border: 2px solid #ffffff8c; background: #0006; }
+.room-frame .reference-room .pre-actions .pbtn.on::before { content: '✓'; display: grid; place-items: center; font-size: 20px; font-weight: 900; color: #10240f; background: #9dd77c; border-color: #9dd77c; }
+.room-frame .reference-room .pre-actions .pbtn small { margin: 0; }
+/* framer sets an inline opacity on board cards: the showdown fade needs to win over it */
+.room-frame .reference-room .card3d.lo, .hero-cards .hero-card.lo { opacity: 1 !important; filter: brightness(.5) saturate(.5); }
+.room-frame .reference-room:not(.vertical) .pre-actions .pbtn { font-size: 23px; gap: 8px; padding: 0 6px; }
+.room-frame .reference-room:not(.vertical) .pre-actions .pbtn::before { width: 22px; height: 22px; }
