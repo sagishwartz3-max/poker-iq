@@ -245,7 +245,7 @@
 .vertical .room-blinds { translate: 0 min(0px, calc((var(--safe-t) / var(--s) - var(--dy)) * .55)); }
 .vertical :is(.pactions:not(.praise .pactions), .ptools) { translate: 0 max(0px, calc(var(--dy) - var(--safe-b) / var(--s))); }
 .vertical .pstatus { translate: 0 max(0px, calc((var(--dy) - var(--safe-b) / var(--s)) * .5)); }
-.vertical .praise { bottom: min(150px, calc(150px - var(--dy) + var(--safe-b) / var(--s))); }
+.vertical .praise { bottom: min(128px, calc(128px - var(--dy) + var(--safe-b) / var(--s))); }
 .vertical .ptray { bottom: min(92px, calc(92px - var(--dy) + var(--safe-b) / var(--s))); }
 .vertical .psheet { bottom: min(0px, calc(var(--safe-b) / var(--s) - var(--dy))); }
 
@@ -361,13 +361,28 @@
 .reference-room .prev-cards .card3d .rk { font-size: 14px; } .reference-room .prev-cards .card3d .su { font-size: 12px; } .reference-room .prev-cards .card3d .big { font-size: 20px; }
 
 /* =====================================================================
-   Clean table (both orientations): a flat top-down table drawn in CSS, no room photo or dealer,
-   seats as avatar + plate under it, upright cards, chips in front of each seat.
+   Clean table (both orientations): a flat top-down table drawn in CSS, no room photo or dealer.
+   Sizes are canvas px; the canvas shows at about 0.4× on a phone, so one type scale keeps every text readable:
+     28 = small labels (≈11 px on screen) · 30–32 = names, amounts · 36–38 = stacks, the coach's question · 40–44 = buttons, pot, result
    Selectors start with .room-frame .reference-room so they win over the older layers above.
    ===================================================================== */
+.room-frame .reference-room { --t-xs: 28px; --t-s: 30px; --t-m: 36px; --t-l: 42px; }
 .room-frame .reference-room .lounge { background: radial-gradient(ellipse at 50% 42%, #18201c 0%, #0b0e0c 58%, #050605 100%); filter: none; transform: none; }
 .room-frame .reference-room .lounge::after { display: none; }
 .room-frame .reference-room .room-dealer, .room-frame .reference-room .room-center-chips { display: none; }
+
+/* top bar */
+.room-frame .reference-room .room-back { left: 27px; top: 16px; width: 80px; height: 80px; }
+.room-frame .reference-room .room-title { left: 128px; top: 16px; gap: 4px; padding-bottom: 6px; }
+.room-frame .reference-room .room-title > b { font-size: 40px; line-height: 1.15; }
+.room-frame .reference-room .room-title button { font-size: var(--t-xs); line-height: 1.2; color: #d7caa9; }
+.room-frame .reference-room .room-wallet { left: 1352px; top: 16px; width: 300px; height: 80px; gap: 14px; padding: 0 22px; }
+.room-frame .reference-room .room-wallet b { font-size: 38px; line-height: 1.05; }
+.room-frame .reference-room .room-wallet small { font-size: var(--t-xs); line-height: 1.15; }
+.room-frame .reference-room.vertical .room-back { left: 28px; top: 34px; width: 86px; height: 86px; }
+.room-frame .reference-room.vertical .room-title { left: 134px; top: 36px; }
+.room-frame .reference-room.vertical .room-wallet { left: 592px; top: 36px; width: 320px; height: 86px; }
+
 /* table */
 .room-frame .reference-room .rail { inset: auto; left: 236px; top: 128px; width: 1200px; height: 640px; padding: 0; border-radius: 320px;
   background: linear-gradient(180deg, #2b2f2d, #141716 55%, #0c0e0d); box-shadow: 0 0 0 2px #040504, inset 0 2px 0 #ffffff1c, inset 0 -2px 0 #0008, 0 34px 70px #000d; }
@@ -382,104 +397,140 @@
 .room-frame .reference-room.vertical .pfelt { border-radius: 390px; }
 .room-frame .reference-room.vertical .pfelt-line { inset: 120px 76px; }
 
-/* board, pot, blinds written on the felt */
-.room-frame .reference-room .pboard { left: 836px; top: 330px; gap: 10px; transform: translateX(-50%); }
-.room-frame .reference-room .pboard .card3d { --cw: 108px !important; }
-.room-frame .reference-room.vertical .pboard { left: 470px; top: 614px; }
-.room-frame .reference-room.vertical .pboard .card3d { --cw: 104px !important; }
-.room-frame .reference-room .card3d .rk { font: 800 calc(var(--cw) * .36)/1 system-ui, -apple-system, 'Segoe UI', Arial, sans-serif; letter-spacing: -.04em; top: 5%; left: 9%; }
-.room-frame .reference-room .card3d .su { font-size: calc(var(--cw) * .26); top: 33%; left: 10%; }
-.room-frame .reference-room .card3d .big { font-size: calc(var(--cw) * .6); right: 7%; bottom: 3%; }
+/* cards: one look everywhere, sizes follow the card width */
 .room-frame .reference-room .card3d .face { border-radius: calc(var(--cw) * .1); background: #fbfaf6; box-shadow: 0 4px 10px #0007, 0 0 0 1px #0000002e; }
 .room-frame .reference-room .card3d.red .face { color: #d0202e; }
-.room-frame .reference-room .ppot { left: 836px; top: 280px; min-width: 0; min-height: 0; padding: 4px 24px; gap: 12px; flex-direction: row; align-items: baseline; clip-path: none;
-  border: 0; border-radius: 24px; background: #00000059; box-shadow: none; font-size: 22px; color: #ffffffb3; }
-.room-frame .reference-room .ppot b { font-size: 32px; color: #ffd76a; }
+.room-frame .reference-room .card3d .rk { font: 800 calc(var(--cw) * .37)/1 system-ui, -apple-system, 'Segoe UI', Arial, sans-serif; letter-spacing: -.04em; top: 6%; left: 9%; }
+.room-frame .reference-room .card3d .su { font-size: calc(var(--cw) * .28); top: 35%; left: 10%; }
+.room-frame .reference-room .card3d .big { font-size: calc(var(--cw) * .58); right: 7%; bottom: 3%; }
+/* framer sets an inline opacity on board cards: the showdown fade has to win over it, and darkens rather than turning see-through */
+.room-frame .reference-room .card3d.lo, .hero-cards .hero-card.lo { opacity: 1 !important; filter: brightness(.5) saturate(.5); }
+
+/* board, pot, blinds written on the felt */
+.room-frame .reference-room .pboard { left: 836px; top: 314px; gap: 10px; transform: translateX(-50%); }
+.room-frame .reference-room .pboard .card3d { --cw: 100px !important; }
+.room-frame .reference-room.vertical .pboard { left: 470px; top: 640px; }
+.room-frame .reference-room .ppot { left: 836px; top: 274px; min-width: 0; min-height: 0; padding: 4px 26px; gap: 12px; flex-direction: row; align-items: baseline; clip-path: none;
+  border: 0; border-radius: 30px; background: #00000059; box-shadow: none; font-size: var(--t-s); color: #ffffffb8; }
+.room-frame .reference-room .ppot b { font-size: var(--t-l); color: #ffd76a; }
 .room-frame .reference-room .ppot > .chips { display: none; }
 .room-frame .reference-room .ppot > span:not(.chips) { margin: 0; }
-.room-frame .reference-room.vertical .ppot { left: 470px; top: 566px; }
-.room-frame .reference-room .room-blinds { left: 636px; top: 494px; width: 400px; height: 40px; padding: 0; gap: 14px; background: none; border: 0; box-shadow: none; font-size: 20px; color: #ffffff6e; translate: none; }
-.room-frame .reference-room .room-blinds b { color: #ffffff8c; font-weight: 600; }
-.room-frame .reference-room .room-blinds em { color: #ffffff8c; border-color: #ffffff26; padding-inline-start: 14px; }
-.room-frame .reference-room.vertical .room-blinds { left: 270px; top: 790px; font-size: 22px; }
+.room-frame .reference-room.vertical .ppot { left: 470px; top: 584px; }
+.room-frame .reference-room .room-blinds { left: 586px; top: 468px; width: 500px; height: 44px; padding: 0; gap: 16px; background: none; border: 0; box-shadow: none; font-size: var(--t-xs); color: #ffffff73; translate: none; }
+.room-frame .reference-room .room-blinds b { color: #ffffff94; font-weight: 600; }
+.room-frame .reference-room .room-blinds em { color: #ffffff94; border-color: #ffffff26; padding-inline-start: 16px; }
+.room-frame .reference-room.vertical .room-blinds { left: 220px; top: 806px; }
 
 /* seats: the avatar is the seat's center, the plate hangs under it */
-.room-frame .reference-room .pseat { width: 170px; height: 100px; }
-.room-frame .reference-room .pseat .pavatar, .room-frame .reference-room .pseat.flip .pavatar { left: 35px; right: auto; top: 0; width: 100px; height: 100px; border-radius: 50%; background: #1b1f1d;
+.room-frame .reference-room .pseat { width: 200px; height: 104px; }
+.room-frame .reference-room .pseat .pavatar, .room-frame .reference-room .pseat.flip .pavatar { left: 48px; right: auto; top: 0; width: 104px; height: 104px; border-radius: 50%; background: #1b1f1d;
   box-shadow: 0 0 0 3px #101211, 0 0 0 4px #ffffff24, 0 8px 16px #0009; }
-.room-frame .reference-room .pseat .pplate, .room-frame .reference-room .pseat.flip .pplate { left: 5px; top: 84px; width: 160px; height: 62px; padding: 4px 8px; border-radius: 12px;
-  border: 1px solid #ffffff1f; background: linear-gradient(#20252299, #0d0f0e) , #0d0f0e; box-shadow: 0 6px 14px #0009; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; z-index: 3; }
-.room-frame .reference-room .pseat .pname { max-width: 148px; font-size: 20px; font-weight: 600; color: #e7ebe8; text-align: center; }
-.room-frame .reference-room .pseat .pstack { font-size: 25px; font-weight: 700; color: #ffd76a; }
-.room-frame .reference-room .pseat.turn .pavatar { box-shadow: 0 0 0 3px #101211, 0 0 0 6px #5fe08a, 0 0 26px #5fe08a88; }
+.room-frame .reference-room .pseat .pplate, .room-frame .reference-room .pseat.flip .pplate { left: 0; top: 90px; width: 200px; height: 80px; padding: 4px 12px; border-radius: 16px;
+  border: 1px solid #ffffff1f; background: linear-gradient(#20252299, #0d0f0e), #0d0f0e; box-shadow: 0 6px 14px #0009;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; z-index: 3; }
+.room-frame .reference-room .pseat .pname { max-width: 176px; font-size: var(--t-s); line-height: 1.15; font-weight: 600; color: #eef1ef; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-frame .reference-room .pseat .pstack { font-size: var(--t-m); line-height: 1.1; font-weight: 700; color: #ffd76a; }
+.room-frame .reference-room .pseat.turn .pavatar { box-shadow: 0 0 0 3px #101211, 0 0 0 7px #5fe08a, 0 0 26px #5fe08a88; }
 .room-frame .reference-room .pseat.turn .pplate { border-color: #5fe08a99; }
-.room-frame .reference-room .pseat.won .pavatar { box-shadow: 0 0 0 3px #101211, 0 0 0 6px #ffd76a, 0 0 30px #ffd76a99; }
+.room-frame .reference-room .pseat.won .pavatar { box-shadow: 0 0 0 3px #101211, 0 0 0 7px #ffd76a, 0 0 30px #ffd76a99; }
 .room-frame .reference-room .pseat.won .pplate { border-color: #ffd76a; }
 .room-frame .reference-room .pseat .pring { display: none; }
-.room-frame .reference-room .pseat .psec, .room-frame .reference-room .pseat.flip .psec { left: 35px; right: auto; top: 0; width: 100px; height: 100px; border: 0; background: #000000a6; font-size: 34px; z-index: 3; color: #fff; }
-.room-frame .reference-room .pseat .pbacks, .room-frame .reference-room .pseat.flip .pbacks { top: -22px; left: 96px; right: auto; opacity: 1; z-index: 3; }
-.room-frame .reference-room .pseat .pbacks i { width: 34px; height: 48px; border-radius: 5px; border: 2px solid #f1ece0; background: repeating-linear-gradient(45deg, #b3263a 0 4px, #8a1828 4px 8px); }
-.room-frame .reference-room .pseat .psaid, .room-frame .reference-room .pseat.flip .psaid { top: 152px; left: 50%; right: auto; translate: -50% 0; font-size: 18px; padding: 2px 14px; z-index: 4; }
-/* shown cards cover the avatar (like a hand turned over at the seat); the hand's name goes under the plate */
+.room-frame .reference-room .pseat .psec, .room-frame .reference-room .pseat.flip .psec { left: 48px; right: auto; top: 0; width: 104px; height: 104px; border: 0; background: #000000a6; font-size: 42px; z-index: 3; color: #fff; }
+.room-frame .reference-room .pseat .pbacks, .room-frame .reference-room .pseat.flip .pbacks { top: -26px; left: 116px; right: auto; opacity: 1; z-index: 3; }
+.room-frame .reference-room .pseat .pbacks i { width: 40px; height: 56px; border-radius: 6px; border: 2px solid #f1ece0; background: repeating-linear-gradient(45deg, #b3263a 0 4px, #8a1828 4px 8px); }
+.room-frame .reference-room .pseat .pbacks i + i { margin-left: -16px; }
+.room-frame .reference-room .pseat .psaid, .room-frame .reference-room .pseat.flip .psaid { top: 96px; left: 50%; right: auto; translate: -50% 0; min-width: 196px; text-align: center; font-size: var(--t-xs); line-height: 1.25; padding: 2px 18px; border-radius: 16px; z-index: 5; }
+/* shown cards turn over on the avatar; the hand's name goes under the plate */
 .room-frame .reference-room .pseat .pshown, .room-frame .reference-room .pseat.flip .pshown, .room-frame .reference-room .pseat.sd-down .pshown, .room-frame .reference-room .pseat.sd-side .pshown {
-  top: -34px; left: 50%; right: auto; translate: -50% 0; width: auto; flex-wrap: nowrap; gap: 4px; z-index: 4; }
-.room-frame .reference-room .pseat .pshown .card3d { --cw: 62px !important; }
-.room-frame .reference-room .pseat .pshown .phand { position: absolute; top: 186px; left: 50%; translate: -50% 0; margin: 0; font-size: 18px; }
+  top: -38px; left: 50%; right: auto; translate: -50% 0; width: auto; flex-wrap: nowrap; gap: 4px; z-index: 4; }
+.room-frame .reference-room .pseat .pshown .card3d { --cw: 72px !important; }
+.room-frame .reference-room .pseat .pshown .phand { position: absolute; top: 218px; left: 50%; translate: -50% 0; margin: 0; font-size: var(--t-xs); line-height: 1.25; padding: 3px 16px; border-radius: 16px; }
+.room-frame .reference-room .pseat.tag-up .pshown .phand { top: -50px; }
+.room-frame .reference-room .pseat .pshown .phand { direction: rtl; unicode-bidi: isolate; white-space: nowrap; }
 /* me */
-.room-frame .reference-room .pseat.me { left: 836px !important; top: 788px !important; width: 200px; height: 112px; }
-.room-frame .reference-room.vertical .pseat.me { left: 470px !important; top: 1262px !important; }
-.room-frame .reference-room .pseat.me .pavatar { left: 44px; width: 112px; height: 112px; }
-.room-frame .reference-room .pseat.me .psec { left: 44px; top: 0; width: 112px; height: 112px; }
-.room-frame .reference-room .pseat.me .pplate { left: 0; top: 94px; width: 200px; height: 64px; padding: 4px 10px; }
-.room-frame .reference-room .pseat.me .pname { font-size: 20px; color: #ffe39a; max-width: 186px; }
-.room-frame .reference-room .pseat.me .pstack { font-size: 27px; color: #fff; }
-.room-frame .reference-room .pseat.me .psaid { top: 164px; }
+.room-frame .reference-room .pseat.me { left: 836px !important; top: 786px !important; width: 320px; height: 116px; }
+.room-frame .reference-room.vertical .pseat.me { left: 470px !important; top: 1250px !important; }
+.room-frame .reference-room .pseat.me .pavatar, .room-frame .reference-room .pseat.me .psec { left: 102px; width: 116px; height: 116px; }
+.room-frame .reference-room .pseat.me .pplate { left: 0; top: 100px; width: 320px; height: 84px; padding: 4px 14px; }
+.room-frame .reference-room .pseat.me .pname { max-width: 292px; }
+.room-frame .reference-room .pseat.me .pstack { font-size: 38px; }
+.room-frame .reference-room .pseat.me .psaid { top: 106px; min-width: 312px; }
 .room-frame .reference-room .pseat.dim { opacity: .55; filter: grayscale(.6); }
 /* my two cards: upright, fanned over the top of my avatar */
 .room-frame .reference-room .peek-cards.hero-cards { left: 836px; top: 614px; width: auto; height: auto; translate: -50% 0; display: flex; direction: ltr; z-index: 12; }
-.room-frame .reference-room.vertical .peek-cards.hero-cards { left: 470px; top: 1058px; }
-.hero-cards .hero-card { --cw: 96px; display: block; animation: hero-deal .45s cubic-bezier(.2,.8,.2,1) both; transition: translate .35s, opacity .35s, filter .35s; }
+.room-frame .reference-room.vertical .peek-cards.hero-cards { left: 470px; top: 1060px; }
+.hero-cards .hero-card { --cw: 92px; display: block; animation: hero-deal .45s cubic-bezier(.2,.8,.2,1) both; transition: translate .35s, filter .35s; }
 .vertical .hero-cards .hero-card { --cw: 106px; }
 .hero-cards .hero-card:first-child { rotate: -7deg; margin-right: -14px; transform-origin: 50% 100%; }
 .hero-cards .hero-card + .hero-card { rotate: 7deg; transform-origin: 50% 100%; animation-delay: .08s; }
 .hero-cards .hero-card .face { position: absolute; inset: 0; display: block; }
 .hero-cards .hero-card.hl { translate: 0 -16px; filter: drop-shadow(0 0 14px #f3d27a); }
-.hero-cards .hero-card.lo { opacity: .45; }
 .hero-cards.is-folded .hero-card { opacity: .4; filter: grayscale(.7); }
 @keyframes hero-deal { from { opacity: 0; translate: 0 -260px; scale: .4; } to { opacity: 1; translate: 0 0; scale: 1; } }
 @media (prefers-reduced-motion: reduce) { .hero-cards .hero-card { animation: none; } }
 
-/* chips in front of each seat, the dealer button beside it */
-.room-frame .reference-room .pbet { font-size: 22px; gap: 8px; align-items: center; z-index: 7; }
-.room-frame .reference-room .pbet b { background: #000000a0; padding: 1px 12px; border-radius: 14px; text-shadow: none; }
-.room-frame .reference-room .pdealer { width: 38px; height: 38px; font-size: 21px; z-index: 7; }
+/* chips in front of each seat (mine beside my cards), the dealer button beside them */
+.room-frame .reference-room .pbet { gap: 8px; align-items: center; z-index: 7; }
+.room-frame .reference-room .pbet b { font-size: var(--t-s); line-height: 1.2; background: #000000a6; padding: 2px 14px; border-radius: 18px; text-shadow: none; }
+.room-frame .reference-room .pdealer { width: 46px; height: 46px; font-size: 26px; z-index: 7; }
 
-/* result banner just under the board */
-.room-frame .reference-room .pwin { top: 536px; }
-.room-frame .reference-room.vertical .pwin { top: 838px; left: 470px; max-width: 760px; }
+/* result banner just under the board (above it while my hand review is up) */
+.room-frame .reference-room .pwin { top: 530px; max-width: 900px; padding: 14px 32px; gap: 4px; }
+.room-frame .reference-room .pwin b { font-size: var(--t-l); line-height: 1.2; }
+.room-frame .reference-room .pwin .pwhy { font-size: var(--t-s); line-height: 1.3; }
+.room-frame .reference-room.vertical .pwin { top: 880px; left: 470px; max-width: 780px; }
+.room-frame .reference-room .with-review .pwin { top: 268px; padding: 6px 28px; }
+.room-frame .reference-room .with-review .pwin b { font-size: var(--t-m); }
+.room-frame .reference-room:not(.vertical) .with-review .pwin .pwhy { display: none; }
+.room-frame .reference-room.vertical .with-review .pwin { top: 516px; max-width: 500px; padding: 12px 22px; }
+.room-frame .reference-room.vertical .with-review .pwin .pwhy { font-size: var(--t-xs); }
+.room-frame .reference-room.vertical .with-review .pwin b { font-size: var(--t-m); }
 
-/* bottom of the portrait screen: status line, buttons, tools */
-.room-frame .reference-room.vertical .pstatus { top: 1386px; }
-.room-frame .reference-room.vertical .pactions:not(.praise .pactions) { top: 1428px; }
-.room-frame .reference-room.vertical .ptools { top: 1560px; }
-.room-frame .reference-room.vertical .pdock > .pro-note { top: 1100px; }
+/* my turn: the coach between the board and my cards, so my cards, seat and buttons stay in view */
+.room-frame .reference-room .phelp { background: #0b1410f2; translate: none; overflow: hidden; gap: 4px; }
+.room-frame .reference-room .phelp small { font-size: var(--t-xs); line-height: 1.3; }
+.room-frame .reference-room .phelp b, .room-frame .reference-room .phelp span { line-height: 1.3; }
+.room-frame .reference-room .phelp .pans-btn { font-size: var(--t-xs); padding: 4px 14px; }
+.room-frame .reference-room .phelp .pans-btn small { font-size: inherit; }
+.room-frame .reference-room .phelp:has(.pans-btn) b { padding-left: 0; }
+.room-frame .reference-room .phelp .pans-btn { position: static; margin: 0; }
+.room-frame .reference-room .phelp-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+.room-frame .reference-room.vertical .phelp { top: 792px; bottom: auto; left: 190px; width: 560px; font-size: 32px; padding: 12px 20px; }
+/* between the side seats, so their cards and chips stay visible */
+.room-frame .reference-room:not(.vertical) .phelp { top: 462px; bottom: auto; left: 836px; translate: -50% 0; width: 900px; font-size: 31px; padding: 10px 20px; }
+
+/* bottom: status line, buttons, tools */
+.room-frame .reference-room .pstatus { font-size: var(--t-xs); line-height: 1.3; padding: 4px 20px; }
+.room-frame .reference-room.vertical .pstatus { left: 470px; top: 1396px; }
+.room-frame .reference-room:not(.vertical) .pstatus { left: auto; right: 20px; top: 108px; transform: none; max-width: 420px; }
+.room-frame .reference-room .pactions:not(.praise .pactions) { left: 1040px; top: 800px; width: 612px; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.room-frame .reference-room.vertical .pactions:not(.praise .pactions) { left: 60px; top: 1440px; width: 820px; gap: 20px; }
+.room-frame .reference-room .pbtn { min-height: 98px; font-size: 38px; line-height: 1.05; }
+.room-frame .reference-room.vertical .pbtn { min-height: 104px; font-size: var(--t-l); }
+.room-frame .reference-room .pbtn small { font-size: var(--t-xs); line-height: 1.15; margin-top: 4px; color: #ece6d6; }
+.room-frame .reference-room .pbubble { font-size: var(--t-xs); top: -62px; padding: 4px 24px; }
+.room-frame .reference-room .ptools { left: 36px; top: 812px; gap: 22px; }
+.room-frame .reference-room.vertical .ptools { left: 40px; top: 1570px; gap: 30px; }
+.room-frame .reference-room .pro-round { width: 82px; height: 82px; }
+.room-frame .reference-room .pro-round svg { width: 40px; height: 40px; }
+.room-frame .reference-room.vertical .pdock > .pro-note { top: 1100px; font-size: var(--t-s); }
+.room-frame .reference-room:not(.vertical) .pdock > .pro-note { top: 640px; left: 836px; transform: translateX(-50%); font-size: var(--t-s); }
+.room-frame .reference-room .psitout { font-size: var(--t-s); }
+.room-frame .reference-room .psitout .pbtn { min-height: 80px; font-size: var(--t-m); padding: 0 34px; }
 .room-frame .reference-room.vertical .psitout { top: 1000px; }
-/* the coach sits on the felt between the board and my cards, so my cards, seat and buttons stay in view */
-.room-frame .reference-room.vertical .phelp { top: 800px; bottom: auto; left: 70px; width: 800px; max-height: 270px; overflow: hidden; translate: none; font-size: 27px; padding: 12px 22px; background: #0b1410f2; }
-.room-frame .reference-room.vertical .phelp small { font-size: 21px; }
-.room-frame .reference-room:not(.vertical) .phelp { top: 488px; bottom: auto; left: 836px; translate: -50% 0; width: 820px; max-height: 128px; overflow: hidden; font-size: 20px; padding: 8px 18px; gap: 2px; background: #0b1410f2; }
-.room-frame .reference-room:not(.vertical) .phelp small { font-size: 16px; }
-.room-frame .reference-room:not(.vertical) .phelp .pans-btn { font-size: 16px; }
-/* while the hand review is up, the result banner moves above the board */
-.room-frame .reference-room .with-review .pwin { top: 266px; }
-.room-frame .reference-room.vertical .with-review .pwin { top: 492px; }
-
-/* pre-actions read as tick boxes: choose now, it plays when your turn comes */
-.room-frame .reference-room .pre-actions .pbtn { flex-direction: row; gap: 12px; }
-.room-frame .reference-room .pre-actions .pbtn::before { content: ''; flex: none; width: 26px; height: 26px; border-radius: 7px; border: 2px solid #ffffff8c; background: #0006; }
-.room-frame .reference-room .pre-actions .pbtn.on::before { content: '✓'; display: grid; place-items: center; font-size: 20px; font-weight: 900; color: #10240f; background: #9dd77c; border-color: #9dd77c; }
-.room-frame .reference-room .pre-actions .pbtn small { margin: 0; }
-/* framer sets an inline opacity on board cards: the showdown fade needs to win over it */
-.room-frame .reference-room .card3d.lo, .hero-cards .hero-card.lo { opacity: 1 !important; filter: brightness(.5) saturate(.5); }
-.room-frame .reference-room:not(.vertical) .pre-actions .pbtn { font-size: 23px; gap: 8px; padding: 0 6px; }
-.room-frame .reference-room:not(.vertical) .pre-actions .pbtn::before { width: 22px; height: 22px; }
+.room-frame .reference-room:not(.vertical) .psitout { top: 470px; }
+/* pre-actions read as tick boxes: choose now, it plays when your turn comes; the label stays where it is on my turn */
+.room-frame .reference-room .pre-actions .pbtn { font-size: 34px; opacity: 1; }
+.room-frame .reference-room.vertical .pre-actions .pbtn { font-size: 38px; }
+.room-frame .reference-room:not(.vertical) .pre-actions .pbtn { font-size: 31px; padding: 0 4px; }
+.room-frame .reference-room .pre-actions .pbtn::before { content: ''; position: absolute; top: 10px; right: 10px; width: 24px; height: 24px; border-radius: 7px; border: 2px solid #ffffff8c; background: #0006; }
+.room-frame .reference-room .pre-actions .pbtn.on::before { content: '✓'; display: grid; place-items: center; font-size: 19px; line-height: 1; font-weight: 900; color: #10240f; background: #9dd77c; border-color: #9dd77c; }
+/* raising: amount, dial, presets, confirm */
+.room-frame .reference-room .praise { padding: 22px; gap: 16px; }
+.room-frame .reference-room.vertical .praise { left: 60px; width: 820px; }
+.room-frame .reference-room .praise-amt { font-size: var(--t-s); gap: 14px; }
+.room-frame .reference-room .praise-amt b { font-size: 54px; }
+.room-frame .reference-room .dial { height: 78px; }
+.room-frame .reference-room .ppresets { gap: 10px; }
+.room-frame .reference-room .ppresets button { height: 66px; min-height: 0; font-size: var(--t-xs); border-radius: 14px; }
+.room-frame .reference-room .praise .pbtn { min-height: 88px; font-size: 38px; }

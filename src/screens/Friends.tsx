@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { isRed, madeHand, RN, SUITS } from '../engine/cards';
 import { act, BLINDS, canRebuy, DEFAULT_CFG, mayRaise, newTable, prizes, publicView, seat, activeCount, showTimes, startHand, turnSecs, type PV, type TAction, type TCfg, type TS, type View } from '../engine/holdem';
 import { applyCmd, CFG_OPTS, optText, type TableCmd } from '../engine/tableops';
@@ -60,6 +61,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   // this player's graded decisions tonight (private, never sent to the table)
   const [log, setLog] = useState<{ hand: number; g: TGrade; text: string; skills: string[]; hinted: boolean }[]>([]);
   const [shownAns, setShownAns] = useState(''); // the spot whose answer the player asked to see
+  const [lessonAt, setLessonAt] = useState(''); // the spot whose lesson hint is open
   const [fb, setFb] = useState<{ g: TGrade; text: string; at: number } | null>(null);
   const [earned, setEarned] = useState(0);
   const [tall, setTall] = useState(() => typeof window !== 'undefined' && innerHeight > innerWidth * 1.15);
@@ -428,7 +430,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
   // Seats sit evenly around the table's oval, me at the bottom. Coordinates are in the room's canvas (portrait 940×1672, landscape 1672×941).
   const room = tall ? ROOM.tall : ROOM.wide;
   const C = tall ? { x: 470, y: 760, rx: 395, ry: 515 } : { x: 836, y: 448, rx: 610, ry: 330 };
-  const HERO = tall ? { x: 470, y: 1262 } : { x: 836, y: 788 };
+  const HERO = tall ? { x: 470, y: 1250 } : { x: 836, y: 786 };
   const slotAt = (relative: number) => {
     if (relative === 0) return HERO;
     const a = (90 + relative * 360 / N) * Math.PI / 180;
@@ -436,15 +438,26 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
     return { x: C.x + C.rx * Math.cos(a), y: tall ? y : Math.min(y, 640) };
   };
   const pos = (i: number) => { const q = slotAt((i - hi + N) % N); return { x: q.x / room.w * 100, y: q.y / room.h * 100 }; };
-  // bets and the dealer button sit between a seat and the middle of the table
   // the dealer button: a little in from the seat, turned toward the next seat so it never sits on the bet
   const dealerAt = (i: number) => {
     const r = (i - hi + N) % N;
-    if (r === 0) return { x: (HERO.x + (tall ? 128 : 124)) / room.w * 100, y: (HERO.y - (tall ? 70 : 58)) / room.h * 100 };
+    if (r === 0) return { x: (HERO.x + (tall ? 140 : 132)) / room.w * 100, y: (HERO.y - (tall ? 76 : 70)) / room.h * 100 };
     const a = (90 + r * 360 / N - (tall ? 14 : 11)) * Math.PI / 180;
     return { x: (C.x + C.rx * .72 * Math.cos(a)) / room.w * 100, y: (C.y + C.ry * .72 * Math.sin(a)) / room.h * 100 };
   };
-  const toward = (i: number, t: number) => { const q = pos(i), c = { x: C.x / room.w * 100, y: C.y / room.h * 100 }; return { x: q.x + (c.x - q.x) * t, y: q.y + (c.y - q.y) * t }; };
+  // chips sit in a free spot next to each seat: beside a side seat (toward the middle), under a top seat, mine beside my cards
+  const betAt = (i: number) => {
+    const r = (i - hi + N) % N;
+    let q: { x: number; y: number };
+    if (r === 0) q = tall ? { x: 300, y: 1168 } : { x: 676, y: 694 };
+    else {
+      const s0 = slotAt(r), inward = s0.x < C.x ? 1 : -1, side = Math.abs(s0.x - C.x) > C.rx * .45;
+      q = side ? { x: s0.x + inward * (tall ? 178 : 200), y: s0.y + (s0.y < C.y ? (tall ? 50 : 30) : (tall ? -6 : -40)) }
+        : s0.y < C.y ? (tall ? { x: s0.x, y: s0.y + 248 } : { x: s0.x + (s0.x <= C.x ? 190 : -190), y: s0.y + 70 })
+        : { x: s0.x + inward * 60, y: s0.y - 130 };
+    }
+    return { x: q.x / room.w * 100, y: q.y / room.h * 100 };
+  };
   const potAt = tall ? { x: '50%', y: '37%' } : { x: '50%', y: '33%' };
   const turnP = V.players.find(p => p.id === V.turn);
   const heroHand = myCards ? (resolved && V.hands?.[P.id]?.name) || madeHand(myCards, V.board.filter((_, i) => !sd || i < (V.runFrom ?? 5) || tm.cardAt(i) <= tShow)).name : '';
@@ -495,12 +508,12 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
         {V.players.map((p, i) => {
           const xy = pos(i), isMe = p.id === P.id, turn = V.turn === p.id && V.phase === 'hand';
           const shown = V.shown[p.id], won = resolved && V.winners.find(w => w.id === p.id), sh = V.hands?.[p.id];
-          const bub = bubbles[p.id], bp = toward(i, isMe ? (tall ? .45 : .56) : .36), dp = dealerAt(i);
+          const bub = bubbles[p.id], bp = betAt(i), dp = dealerAt(i);
           // the same face for the same player on every phone (by seat order), and the bots' faces match their names
           const avatar = AVATARS[i % AVATARS.length];
           return (
             <div key={p.id}>
-              <div className={`pseat ${tall && xy.x > 50 ? 'flip' : ''} ${tall && !isMe ? (xy.y > 44 || xy.y < 19 ? 'sd-down' : xy.y < 25 ? 'sd-side' : '') : ''} ${p.inHand && !p.folded ? '' : 'dim'} ${isMe ? 'me' : ''} ${turn ? 'turn' : ''} ${won ? 'won' : ''}`} style={{ left: `${xy.x}%`, top: `${xy.y}%` }}>
+              <div className={`pseat ${tall && xy.x > 50 ? 'flip' : ''} ${tall && !isMe && xy.y > 25 && xy.y < 55 ? 'tag-up' : ''} ${p.inHand && !p.folded ? '' : 'dim'} ${isMe ? 'me' : ''} ${turn ? 'turn' : ''} ${won ? 'won' : ''}`} style={{ left: `${xy.x}%`, top: `${xy.y}%` }}>
                 {p.has && !shown && !isMe && <div className="pbacks"><i /><i /></div>}
                 {shown && !isMe && <div className={`pshown ${resolved ? (won ? 'win' : 'lose') : ''}`}>{shown.map((c, k) => <MiniCard key={k} c={c} size={28} delay={k * 0.1} hl={hlOf(c)} />)}
                   {resolved && sh && <em className="phand">{sh.name}</em>}</div>}
@@ -515,7 +528,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
                 <AnimatePresence>{bub && now - bub.k < 2500 && <motion.span key={bub.k} className="bubble" initial={{ scale: 0, y: 0 }} animate={{ scale: 1.2, y: -30 }} exit={{ opacity: 0 }}>{bub.e}</motion.span>}</AnimatePresence>
               </div>
               {p.bet > 0 && !sd && <motion.div className="pbet" initial={{ left: `${xy.x}%`, top: `${xy.y}%`, opacity: 0 }} animate={{ left: `${bp.x}%`, top: `${bp.y}%`, opacity: 1 }} transition={{ type: 'spring', stiffness: 200, damping: 22 }}>
-                <Chips amount={p.bet} unit={V.bb} size={33} /><b className="num">{fmt(p.bet)}</b></motion.div>}
+                <Chips amount={p.bet} unit={V.bb} size={40} /><b className="num">{fmt(p.bet)}</b></motion.div>}
               {i === V.btn && <div className="pdealer" style={{ left: `${dp.x}%`, top: `${dp.y}%` }}>D</div>}
             </div>
           );
@@ -539,10 +552,13 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
       <div className={`pdock ${helpCard ? 'with-help' : ''}`}>
         {helpCard === 'think' && advice && (() => { const t = thinkText(advice); return (
           <motion.div key={spotKey} className="phelp" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="note" aria-label="המאמן">
-            <small>📘 מהשיעור "{t.from}": <Rich text={t.lesson} /></small>
             <b><Rich text={t.ask} /></b>
-            {ansOpen ? <span className="pans">{answerText(advice)}</span>
-              : <button className="pans-btn" onClick={() => setShownAns(spotKey)}>תראה לי את התשובה <small>(פחות XP)</small></button>}
+            {lessonAt === spotKey && <small>📘 מהשיעור "{t.from}": <Rich text={t.lesson} /></small>}
+            {ansOpen && <span className="pans">{answerText(advice)}</span>}
+            <div className="phelp-row">
+              {lessonAt !== spotKey && <button className="pans-btn" onClick={() => setLessonAt(spotKey)}>📘 רמז</button>}
+              {!ansOpen && <button className="pans-btn" onClick={() => setShownAns(spotKey)}>התשובה <small>(פחות XP)</small></button>}
+            </div>
           </motion.div>); })()}
         {helpCard === 'fb' && fb && (
           <motion.div key={fb.at} className={`phelp fb ${fb.g}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="status" aria-label="משוב על ההחלטה">
@@ -597,6 +613,8 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
               {tray && <div className="ptray">{EMOJIS.map(e => <button key={e} onClick={() => { emoji(e); setTray(false); }} aria-label={`שלח ${e}`}>{e}</button>)}</div>}
             </div>
 
+      {/* the sheets open outside the scaled table, at the phone's own text size like the rest of the app */}
+      {createPortal(<>
       {/* manager menu */}
       <AnimatePresence>
         {menu && (
@@ -651,6 +669,7 @@ export function Friends({ initialCode, onPlaying }: { initialCode?: string; onPl
           </motion.div>
         </>)}
       </AnimatePresence>
+      </>, document.body)}
       <Burst fire={burst} colors={['#e9c46a', '#fff1c1', '#c9a227']} />
     </>)}</RoomStage>
   );
